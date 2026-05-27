@@ -4,7 +4,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-# ── P.1622-0 IMPLEMENTATIONS ────────────────────────────────────────────────
+# ── P.1622-0 IMPLEMENTATIONS (Mie, Scintillation) ────────────────────────────────────────────────
 
 def mie_attenuation_dB(lam_um, hE_km, el_deg):
     """
