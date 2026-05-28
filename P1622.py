@@ -87,30 +87,6 @@ def scintillation_sigma_dB(lam_um, el_deg, h0_m=5.5, Z_m=20000, vrms=21.0):
     sigma2_dBN = (10 / np.log(10))**2 * sigma2_lnN
     return np.sqrt(sigma2_dBN)
 
-# ── Total atmospheric attenuation ────────────────────────────────────────────
-
-#def total_attenuation_dB(lam_um, hE_km, el_deg, h0_m=5.5, Z_m=20000, vrms=21.0):
-    """
-    Total atmospheric attenuation in dB for Earth-to-space FSO link.
-    Combines Mie scattering and scintillation effects.
-
-    Parameters
-    ----------
-    lam_um : float   wavelength in micrometres
-    hE_km  : float   ground station altitude above MSL in km
-    el_deg : float   elevation angle in degrees
-    h0_m   : float   earth station height above ground in metres (default 5.5 m)
-    Z_m    : float   effective turbulence height in metres (default 20 000 m)
-    vrms   : float   rms wind speed (m/s, default 21)
-
-    Returns
-    -------
-    total_dB : float   total attenuation in dB (positive = loss)
-    """
-    mie_dB = mie_attenuation_dB(lam_um, hE_km, el_deg)
-    scin_dB = scintillation_sigma_dB(lam_um, el_deg, h0_m, Z_m, vrms)
-    return mie_dB + scin_dB
-
 # ── FREQUENCY / WAVELENGTH GRID ──────────────────────────────────────────────
 # Validity range of Annex 1: 150–375 THz  (≈ 0.8–2.0 µm)
 freq_THz = np.linspace(150, 375, 600)
