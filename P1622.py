@@ -87,6 +87,29 @@ def scintillation_sigma_dB(lam_um, el_deg, h0_m=5.5, Z_m=20000, vrms=21.0):
     sigma2_dBN = (10 / np.log(10))**2 * sigma2_lnN
     return np.sqrt(sigma2_dBN)
 
+# ── Total atmospheric attenuation ────────────────────────────────────────────
+
+#def total_attenuation_dB(lam_um, hE_km, el_deg, h0_m=5.5, Z_m=20000, vrms=21.0):
+    """
+    Total atmospheric attenuation in dB for Earth-to-space FSO link.
+    Combines Mie scattering and scintillation effects.
+
+    Parameters
+    ----------
+    lam_um : float   wavelength in micrometres
+    hE_km  : float   ground station altitude above MSL in km
+    el_deg : float   elevation angle in degrees
+    h0_m   : float   earth station height above ground in metres (default 5.5 m)
+    Z_m    : float   effective turbulence height in metres (default 20 000 m)
+    vrms   : float   rms wind speed (m/s, default 21)
+
+    Returns
+    -------
+    total_dB : float   total attenuation in dB (positive = loss)
+    """
+    mie_dB = mie_attenuation_dB(lam_um, hE_km, el_deg)
+    scin_dB = scintillation_sigma_dB(lam_um, el_deg, h0_m, Z_m, vrms)
+    return mie_dB + scin_dB
 
 # ── FREQUENCY / WAVELENGTH GRID ──────────────────────────────────────────────
 # Validity range of Annex 1: 150–375 THz  (≈ 0.8–2.0 µm)
@@ -103,9 +126,11 @@ el  = 40.0  # degrees elevation angle
 mie_dB  = np.array([mie_attenuation_dB(l, hE, el) for l in lam_um])
 scin_1s = np.array([scintillation_sigma_dB(l, el)  for l in lam_um])
 scin_3s = 3 * scin_1s
+total_attenuation_dB = mie_dB + scin_1s  # Total attenuation for 1σ scintillation fade
 
 mie_at_target  = mie_attenuation_dB(TARGET_LAM, hE, el)
 scin_at_target = scintillation_sigma_dB(TARGET_LAM, el)
+total_at_target = mie_at_target + scin_at_target
 
 # ── VALIDATION (console) ─────────────────────────────────────────────────────
 print("=== VALIDATION vs P.1622-0 Table 2 ===")
@@ -123,15 +148,17 @@ print(f"\n@ {TARGET_FREQ} THz ({TARGET_LAM:.4f} µm), hE={hE} km, el={el}°")
 print(f"  Mie A_S            = {mie_at_target:.4f} dB")
 print(f"  Scin σ_dBN  (1σ)   = {scin_at_target:.4f} dB")
 print(f"  Scin fade   (3σ)   = {3*scin_at_target:.4f} dB")
+print(f"  Total         = {total_at_target:.4f} dB")
 
 # ── PLOT ─────────────────────────────────────────────────────────────────────
 MIE_C  = '#d62728'   # red
 SC1_C  = '#1f77b4'   # blue
 SC3_C  = '#ff7f0e'   # orange
 VL_C   = '#9467bd'   # purple — target frequency line
+TOT_C  = '#2ca02c'   # green
 
-fig = plt.figure(figsize=(11, 8), facecolor='white')
-gs  = gridspec.GridSpec(2, 1, hspace=0.50, top=0.88, bottom=0.10,
+fig = plt.figure(figsize=(11, 12), facecolor='white')
+gs  = gridspec.GridSpec(3, 1, hspace=0.50, top=0.88, bottom=0.10,
                         left=0.10, right=0.95)
 
 def style_ax(ax):
@@ -180,7 +207,7 @@ ax1.set_ylim(bottom=0)
 ax1.legend(fontsize=9, framealpha=0.9, loc='upper left')
 add_wavelength_axis(ax1)
 
-# ── BOTTOM: Scintillation ────────────────────────────────────────────────────
+# ── MID: Scintillation ────────────────────────────────────────────────────
 ax2 = fig.add_subplot(gs[1])
 style_ax(ax2)
 
@@ -215,9 +242,36 @@ ax2.set_ylim(bottom=0)
 ax2.legend(fontsize=9, framealpha=0.9, loc='upper left')
 add_wavelength_axis(ax2)
 
+# ── BOTTOM: Total attenuation ────────────────────────────────────────────────
+ax3 = fig.add_subplot(gs[2])
+style_ax(ax3)
+
+ax3.plot(freq_THz, total_attenuation_dB, color=TOT_C, lw=2.0,
+         label='Total $A_{total}$ — P.1622-0 Annex 1, eq.(4a)')
+ax3.axvline(TARGET_FREQ, color=VL_C, lw=1.6, ls='--',
+            label=f'{TARGET_FREQ} THz  ({TARGET_LAM:.3f} µm)')
+ax3.axhline(total_at_target, color=TOT_C, lw=0.8, ls=':', alpha=0.5)
+ax3.scatter([TARGET_FREQ], [total_at_target], color=[TOT_C], zorder=5, s=60)
+ax3.annotate(f'{total_at_target:.4f} dB',
+             xy=(TARGET_FREQ, total_at_target),
+             xytext=(TARGET_FREQ + 22, total_at_target + 0.04),
+             color=TOT_C, fontsize=9,
+             arrowprops=dict(arrowstyle='->', color=TOT_C, lw=1.1))
+ax3.set_xlabel('Frequency (THz)', fontsize=10)
+ax3.set_ylabel('Total Attenuation  $A_{total}$ (dB)', fontsize=10)
+ax3.set_title(f'Total Atmospheric Attenuation — P.1622-0 Annex 1, eq.(4a)\n'
+              f'$h_E$ = {hE} km,  $\\theta_E$ = {el}°,  $h_0$ = 5.5 m,  '
+              f'$v_{{rms}}$ = 21 m/s,  $C_0$ = 1.7×10⁻¹⁴ m⁻²/³', fontsize=10, pad=6)
+ax3.set_xlim(150, 375)
+ax3.set_ylim(bottom=0)
+ax3.legend(fontsize=9, framealpha=0.9, loc='upper left')
+add_wavelength_axis(ax3)
+
+
 fig.suptitle('ITU-R P.1622-0  |  FSO Earth–Space Link Impairments  |  150–375 THz',
              fontsize=13, color='#111111', fontweight='bold', y=0.97)
 
-plt.savefig('/mnt/user-data/outputs/P1622_mie_scintillation.png',
+plt.savefig('P1622_mie_scintillation.png',
             dpi=150, bbox_inches='tight', facecolor='white')
 print("\nPlot saved.")
+
