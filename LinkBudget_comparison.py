@@ -123,7 +123,7 @@ print(f"  Scin σ_dBN  (1σ)   = {scin_at_target:.4f} dB")
 print(f"  Scin fade   (3σ)   = {3*scin_at_target:.4f} dB")
 #print(f"  Total         = {total_at_target:.4f} dB")
 
-# ── PARAMETERS DEFINITION ─────────────────────────────────────────────────────
+# ── TABLE 5 (Link Budget Analysis of FSO Satellite Network) ──────────────────────────────────────────────────────────────────────
 lam_um  = 1.550   # µm
 hE_km   = 1.0     # km
 h0_m   = 5.5     # m
@@ -131,11 +131,11 @@ vrms    = 21.0    # m/s
 Z_m    = 20000   # m
 C0      = 1.7e-14 # m^{-2/3}
 
-# ── TABLE 5 ──────────────────────────────────────────────────────────────────────
-
 theta_E_deg = np.linspace(10, 90, 9)
-total_attenuation_table5 = np.array([total_attenuation_dB(lam_um, el, h0_m=h0_m, Z_m=Z_m, vrms=vrms) for el in theta_E_deg])
+total_attenuation_table = np.array([total_attenuation_dB(lam_um, el, h0_m=h0_m, Z_m=Z_m, vrms=vrms) for el in theta_E_deg])
+mie_attenuation_table = np.array([mie_attenuation_dB(lam_um, hE_km, el) for el in theta_E_deg])
+scin_1s_table = np.array([scintillation_sigma_dB(lam_um, el, h0_m=h0_m, Z_m=Z_m, vrms=vrms) for el in theta_E_deg])
 
-print("\n| Elevation angle (°) | Total attenuation (dB)|")
-for el, att in zip(theta_E_deg, total_attenuation_table5):
-    print(f"|         {el:.0f}          |         {att:.4f}        |")
+print("\n| Elevation angle (°) | Total attenuation (dB)|  Mie attenuation (dB) |   Scintillation (dB)  |")
+for el, att, mie, scin in zip(theta_E_deg, total_attenuation_table, mie_attenuation_table, scin_1s_table):
+    print(f"|         {el:.0f}          |         {att:.4f}        |         {mie:.4f}        |         {scin:.4f}        |")
