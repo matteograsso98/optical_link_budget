@@ -87,5 +87,52 @@ def scintillation_sigma_dB(lam_um, el_deg, h0_m=5.5, Z_m=20000, vrms=21.0):
     sigma2_dBN = (10 / np.log(10))**2 * sigma2_lnN
     return np.sqrt(sigma2_dBN)
 
+# ── "LINK BUDGET ANALYSIS FOR FSO" IMPLEMENTATIONS ────────────────────────────────────────────────
 
 
+def geometrical_scattering_dB(
+    el_deg,
+    LW: float = 3.128*10**-4,
+    N: float = 0.5 ,
+    wavelength_nm: float = 1550,
+    h_A: float = 20.0,
+    h_E: float = 1.0,
+    phi: float = 1.6,
+) -> dict:
+    """
+    Compute atmospheric attenuation due to geometrical scattering (Ig).
+    
+    Parameters
+    ----------
+    LW          : Liquid water content (g/m^-3)
+    N           : Cloud number concentration (cm^-3)
+    wavelength_nm: Wavelength of the optical beam (nm)
+    h_A         : Height of the troposphere layer (km)
+    h_E         : Altitude of the ground station (km)
+    phi         : Particle size coefficient (default 1.6)
+    el_deg      : Elevation angle in degrees
+
+    Returns
+    -------
+    dict with intermediate values and final Ig
+    """
+
+    # --- Input validation ---
+    if LW <= 0 or N <= 0:
+        raise ValueError("LW and N must be strictly positive.")
+    if h_A <= h_E:
+        raise ValueError("h_A (troposphere height) must be greater than h_E (station altitude).")
+
+    # --- Step 1: Visibility V (km) — Eq. (8) ---
+    V = 1.002 / ((LW * N) ** 0.6473)
+
+    # --- Step 2: Attenuation coefficient theta_A — Eq. (9) ---
+    theta_A = (3.91 / V) * (wavelength_nm / 550) ** (-phi)
+
+    # --- Step 3: Path length through troposphere d_A (km) ---
+    # Using elevation angle: d_A = (h_A - h_E) * csc(theta_E)
+    d_A = (h_A - h_E) / np.sin(np.radians(el_deg))
+
+    # --- Step 4: Geometrical scattering attenuation Ig — Eq. (10) ---
+    # Beer-Lambert law: Ig = exp(-theta_A * d_A)
+    return np.exp(-theta_A * d_A)
