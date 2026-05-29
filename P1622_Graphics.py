@@ -3,7 +3,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from P1622 import mie_attenuation_dB, Cn2_profile ,scintillation_sigma_dB
+from P1622 import mie_attenuation_dB, Cn2_profile ,scintillation_sigma_dB, geometrical_scattering_dB
 
 # ── FREQUENCY / WAVELENGTH GRID ──────────────────────────────────────────────
 # Validity range of Annex 1: 150–375 THz  (≈ 0.8–2.0 µm)
