@@ -1,4 +1,4 @@
-# Optical_Link_Budget
+# Optical Link Budget
 
 
 Channel model for Free-Space Optical (FSO) links on LEO constellations.
@@ -13,7 +13,7 @@ Link budget formulas follow **Liang et al., arXiv:2204.13177v1**.
 ## Structure
 
 ```
-fso_channel/
+optical_link_budget/
 │
 ├── atmosphere/            # Pure ITU-R atmospheric physics — no link budget here
 │   ├── mie.py             # Mie scattering attenuation         (P.1622-0 §3.1)
@@ -25,6 +25,7 @@ fso_channel/
 │   ├── geometry.py        # Slant distance, FSPL               (Liang eqs.4–5)
 │   └── budget.py          # Gains, pointing losses, P_T solver
 │
+│── tests/ --> here pytest 
 ├── config.py              # ← Change scenario parameters here
 └── main.py                # Run scenarios, print tables
 ```
@@ -43,12 +44,12 @@ fso_channel/
 
 ```python
 # Run the default scenario tables:
-python -m fso_channel.main
+python -m optical_link_budget.main
 
 # Use individual modules in a notebook:
-from fso_channel.atmosphere import mie, scintillation
-from fso_channel.link import geometry, budget
-from fso_channel.config import DEFAULT_ATM, DEFAULT_ORBIT, DEFAULT_TERMINAL
+from optical_link_budget.atmosphere import mie, scintillation
+from optical_link_budget.link import geometry, budget
+from optical_link_budget.config import DEFAULT_ATM, DEFAULT_ORBIT, DEFAULT_TERMINAL
 
 A_mie = mie.attenuation_dB(1.55, hE_km=1.0, el_deg=40.0)
 d_GS  = geometry.slant_distance_km(40.0, hE_km=1.0, hS_km=550.0)
