@@ -1,4 +1,5 @@
-# fso_channel
+# Optical_Link_Budget
+
 
 Channel model for Free-Space Optical (FSO) links on LEO constellations.
 Covers **ground-to-space** static link budgets; space-to-space links share the
