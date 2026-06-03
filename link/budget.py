@@ -12,10 +12,8 @@ References
 
 import numpy as np
 
-from fso_channel.link.geometry import fspl_dB
-from fso_channel.atmosphere import mie, geometric, scintillation
-
-
+from optical_link_budget.link.geometry import fspl_dB
+from optical_link_budget.atmosphere import mie, geometric, scintillation
 # ---------------------------------------------------------------------------
 # Terminal parameters
 # ---------------------------------------------------------------------------

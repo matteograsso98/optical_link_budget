@@ -10,10 +10,9 @@ Run from the repo root:
 
 import numpy as np
 
-from fso_channel.config import DEFAULT_ATM, DEFAULT_ORBIT, DEFAULT_TERMINAL
-from fso_channel.atmosphere import mie, scintillation, geometric
-from fso_channel.link import geometry, budget
-
+from optical_link_budget.config import DEFAULT_ATM, DEFAULT_ORBIT, DEFAULT_TERMINAL
+from optical_link_budget.atmosphere import mie, scintillation, geometric
+from optical_link_budget.link import geometry, budget
 
 # ── Elevation sweep ───────────────────────────────────────────────────────────
 
@@ -110,3 +109,7 @@ for r in rows:
     print(f"{r['el']:>9.0f} | {r['d_GS']:>9.2f} | {r['FSPL']:>10.4f} | "
           f"{r['A_mie']:>9.4f} | {r['A_geom']:>10.4f} | {r['A_tot_geom']:>10.4f} | "
           f"{r['P_T_geom']:>10.4f}")
+
+# ── Plots ─────────────────────────────────────────────────────────────────────
+from optical_link_budget.plots import plot_atmospheric_impairments
+plot_atmospheric_impairments(atm=atm)
