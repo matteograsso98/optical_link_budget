@@ -1,0 +1,33 @@
+# Main scenario definition file for a single, date-specific run.
+
+simulation:
+  name: "TASI_VLEO_orbits_test_2025-09-16"
+  start_date_utc: 2025-03-28 10:00:00.000000+00:00 #2025-09-16 10:21:28.450148+00:00 #"2025-05-15T15:28:00Z"
+  duration_s: 600
+  time_step_s: 1
+  enable_satellite_movement: True # If False, channel won't be recomputed
+
+file_paths:
+  input_dir: "simulator/data/inputs/"
+  output_dir: "simulator/data/outputs/"
+  log_dir: "logs/"
+  # Path to the ground station data file, relative to input_dir
+  ground_station_file: "gateways.csv"
+  user_map_geojson_file: "ho_europe.geojson"
+  user_hotspots_file: "hotspots.csv"
+  satellite_trajectory_file: "satellite_trajectories.npy"
+  user_positions_file: "50_user_positions.npz"
+
+scenario:
+  # --- Select the components for this simulation ---
+  active_constellation_name:  "TASI_VLEO"
+  active_user_terminal_type: "vsat"
+
+  # --- Include the component configurations --- 
+  environment: !include auxiliary/configurator_manager/environment.yaml
+  constellation_definitions: !include auxiliary/configurator_manager/constellation.yaml
+  satellite_payload: !include auxiliary/configurator_manager/satellite_payload.yaml
+  user_terminal_definitions: !include auxiliary/configurator_manager/user_terminal.yaml
+  algorithms: !include auxiliary/configurator_manager/algorithms.yaml
+  # Include the new user deployment configuration
+  user_deployment: !include auxiliary/configurator_manager/user_deployment.yaml
