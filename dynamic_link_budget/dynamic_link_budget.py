@@ -1,21 +1,20 @@
 """
 dynamic_link_budget.py
 ======================
-Canal FSO dynamique — structure calquée sur channel.py.
+Canal FSO dynamique — adapté de channel.py pour les liaisons optiques LEO.
 
-Différences par rapport à channel.py :
-  - Pertes atmosphériques : Mie + Géométrique (LUT FSO) au lieu de ITU-R P.618
-  - Steering vector UPA   : via antenna.py au lieu de l'objet tx
-  - SNR + Shannon         : via snr.py (ajout)
-  - Plots                 : via plots.py (ajout)
-Le reste (H_ideal, H_realistic, large-scale fading 3GPP) est identique.
+Différences par rapport à channel.py (RF) :
+  - Suppression du fading à grande échelle 3GPP (load_large_scale_model)
+    → non pertinent pour FSO optique
+  - Suppression ITU-R P.618 (RF)
+    → remplacé par ITU-R P.1622 : Mie + Géométrique via LUT FSO
+  - Steering vector UPA via antenna.py
+  - SNR + Shannon via snr.py
 """
 
 import numpy as np
-
 from optical_link_budget_paper.atmosphere import mie, geometric
 from optical_link_budget_paper.link import budget
-from channel_model.load_large_scale_model import load_large_scale_model
 from dynamic_link_budget.antenna import upa_steering_vector
 from dynamic_link_budget.snr import compute_snr_dB, compute_shannon_rate
 
@@ -27,26 +26,30 @@ class DynamicLinkBudget:
 
         # ── Paramètres optiques fixes ──────────────────────────────────
         self.lam_m   = link_config["lam_um"] * 1e-6
-        self.G_R     = budget.receive_gain(link_config["Dr_m"],
-                                           link_config["lam_um"])
+        self.G_R     = budget.receive_gain(
+                           link_config["Dr_m"], link_config["lam_um"])
         noise_dBm    = link_config.get("noise_dBm", -100.0)
         self.noise_W = 10 ** (noise_dBm / 10) * 1e-3
 
-        # ── Large-scale fading 3GPP TR 38.811 — identique à channel.py ─
-        self.lsm = load_large_scale_model(
-            link_config.get("channel_scenario", "urban")
-        )
-
-        # ── LUT pertes atmosphériques FSO — remplace itur ──────────────
+        # ── LUT pertes atmosphériques FSO (ITU-R P.1622) ───────────────
+        # Remplace itur P.618 de channel.py
         self._att_lut_dB       = None
         self._att_lut_elev_deg = None
 
     # ──────────────────────────────────────────────────────────────────
-    # LUT FSO — remplace precompute_attenuation_lut() de channel.py
+    # LUT ITU-R P.1622 — Mie + Géométrique
     # ──────────────────────────────────────────────────────────────────
 
-    def precompute_lut(self, elevation_grid_deg=None, lut_cache_path=None):
-        """Précalcule Mie + Géométrique sur grille d'élévations."""
+    def precompute_lut(self, elevation_grid_deg=None,
+                       lut_cache_path=None) -> None:
+        """
+        Précalcule les pertes atmosphériques FSO (ITU-R P.1622)
+        sur une grille d'élévations.
+
+        Remplace precompute_attenuation_lut() de channel.py :
+          - channel.py  : itur P.618, dépendance géographique (U x G)
+          - ici         : Mie + Géométrique P.1622, 1D (G,)
+        """
         if elevation_grid_deg is None:
             elevation_grid_deg = np.arange(10, 90.5, 0.5, dtype=np.float64)
 
@@ -56,7 +59,7 @@ class DynamicLinkBudget:
             if os.path.exists(lut_cache_path) and os.path.exists(meta_path):
                 self._att_lut_dB       = np.load(lut_cache_path)
                 self._att_lut_elev_deg = np.load(meta_path)
-                print(">>> LUT FSO chargée depuis le cache")
+                print(">>> LUT FSO (P.1622) chargée depuis le cache")
                 return
 
         cfg    = self.cfg
@@ -64,8 +67,10 @@ class DynamicLinkBudget:
         for i, el in enumerate(elevation_grid_deg):
             losses[i] = (
                 mie.attenuation_dB(cfg["lam_um"], cfg["hE_km"], el) +
-                geometric.attenuation_dB(el, cfg["LW"], cfg["N_droplets"],
-                    cfg["lam_um"], cfg["hA_km"], cfg["hE_km"], cfg["phi"])
+                geometric.attenuation_dB(
+                    el, cfg["LW"], cfg["N_droplets"],
+                    cfg["lam_um"], cfg["hA_km"],
+                    cfg["hE_km"], cfg["phi"])
             )
 
         self._att_lut_dB       = losses
@@ -74,10 +79,13 @@ class DynamicLinkBudget:
         if lut_cache_path is not None:
             np.save(lut_cache_path, losses)
             np.save(str(lut_cache_path) + ".elev.npy", elevation_grid_deg)
-        print(f">>> LUT FSO calculée : {losses.size} points")
+        print(f">>> LUT FSO (P.1622) calculée : {losses.size} points")
 
     def _lookup_fso_losses_dB(self, elevation_deg):
-        """Interpolation 1D dans le LUT — identique à channel.py."""
+        """
+        Interpolation 1D dans le LUT.
+        Identique à _lookup_attenuation_dB() de channel.py.
+        """
         grid   = self._att_lut_elev_deg
         elev   = np.clip(np.asarray(elevation_deg, dtype=np.float64),
                          grid[0], grid[-1])
@@ -85,15 +93,21 @@ class DynamicLinkBudget:
         idx_lo = np.floor(idx_f).astype(np.int64)
         idx_hi = np.minimum(idx_lo + 1, grid.size - 1)
         frac   = idx_f - idx_lo
-        return (1.0 - frac)*self._att_lut_dB[idx_lo] + frac*self._att_lut_dB[idx_hi]
+        return ((1.0 - frac) * self._att_lut_dB[idx_lo]
+                + frac * self._att_lut_dB[idx_hi])
 
     # ──────────────────────────────────────────────────────────────────
-    # compute() — identique à channel.py sauf pertes itur → FSO
+    # compute() — canal FSO, sans fading 3GPP
     # ──────────────────────────────────────────────────────────────────
 
     def compute(self, ts_index, slant_range_m, az_deg, el_deg):
         """
         Calcule H_ideal, H_realistic, SNR et débit Shannon.
+
+        Par rapport à channel.py :
+          - Supprimé  : large_scale_loss_dB (3GPP TR 38.811)
+          - Supprimé  : p618_total_loss_dB  (ITU-R P.618 RF)
+          - Remplacé  : fso_loss_dB         (ITU-R P.1622 optique)
 
         Paramètres
         ----------
@@ -111,24 +125,19 @@ class DynamicLinkBudget:
         el  = np.asarray(el_deg,        dtype=np.float64)
         az  = np.asarray(az_deg,        dtype=np.float64)
         d   = np.asarray(slant_range_m, dtype=np.float64)
-        U   = el.size
 
         # ══════════════════════════════════════════════════════════════
         # 1. H_IDEAL — identique à channel.py
         # ══════════════════════════════════════════════════════════════
 
-        # Steering vector UPA via antenna.py
-        # remplace tx.compute_tx_radiation_pattern(u, v)
         radiation_pattern = upa_steering_vector(
             az, el,
             self.cfg["N_x"], self.cfg["N_y"],
             self.cfg["d_x"], self.cfg["d_y"],
         )
 
-        # ξ = sqrt(G_R / noise_W) / (4π/λ)
         xi = np.sqrt(self.G_R / self.noise_W) / (4 * np.pi / lam)
 
-        # Garde slant invalide
         slant_ok = np.isfinite(d) & (d > 0)
         safe_d   = np.where(slant_ok, d, np.nan)
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -139,32 +148,8 @@ class DynamicLinkBudget:
         h_ideal = xi * radiation_pattern * phase_path_loss[:, None]
 
         # ══════════════════════════════════════════════════════════════
-        # 2. LARGE-SCALE FADING — identique à channel.py
-        # ══════════════════════════════════════════════════════════════
-
-        elev_clipped = np.clip(el, 10, 90)
-        row_index    = (np.round(elev_clipped, -1) / 10 - 1).astype(int)
-
-        prop_model = self.cfg.get("propagation_model", "los")
-        if prop_model == "los":
-            los_flag = np.ones(U, dtype=bool)
-        else:
-            los_prob = self.lsm["large_scale_fading"]["los_prob"].values[row_index]
-            los_flag = np.random.rand(U) * 100 <= los_prob
-
-        sigma = np.where(
-            los_flag,
-            self.lsm["large_scale_fading"]["sigma_los"].values[row_index],
-            self.lsm["large_scale_fading"]["sigma_nlos"].values[row_index],
-        )
-        large_scale_loss_dB = np.random.randn(U) * sigma
-
-        if prop_model == "nlos":
-            clutter = self.lsm["large_scale_fading"]["cl"].values[row_index]
-            large_scale_loss_dB[~los_flag] += clutter[~los_flag]
-
-        # ══════════════════════════════════════════════════════════════
-        # 3. PERTES FSO — remplace ITU-R P.618 de channel.py
+        # 2. PERTES ATMOSPHÉRIQUES FSO — ITU-R P.1622
+        #    Remplace large_scale_loss + p618 de channel.py
         # ══════════════════════════════════════════════════════════════
 
         if self._att_lut_dB is not None:
@@ -173,18 +158,20 @@ class DynamicLinkBudget:
             cfg = self.cfg
             fso_loss_dB = np.array([
                 mie.attenuation_dB(cfg["lam_um"], cfg["hE_km"], e) +
-                geometric.attenuation_dB(e, cfg["LW"], cfg["N_droplets"],
-                    cfg["lam_um"], cfg["hA_km"], cfg["hE_km"], cfg["phi"])
+                geometric.attenuation_dB(
+                    e, cfg["LW"], cfg["N_droplets"],
+                    cfg["lam_um"], cfg["hA_km"],
+                    cfg["hE_km"], cfg["phi"])
                 for e in el
             ])
 
         # ══════════════════════════════════════════════════════════════
-        # 4. H_REALISTIC — identique à channel.py
+        # 3. H_REALISTIC — identique à channel.py
+        #    total_loss = fso_loss uniquement (plus de 3GPP)
         # ══════════════════════════════════════════════════════════════
 
-        total_loss_dB = large_scale_loss_dB + fso_loss_dB
-        loss_scaling  = 1.0 / np.sqrt(10 ** (0.1 * total_loss_dB))
-        h_realistic   = h_ideal * loss_scaling[:, None]
+        loss_scaling = 1.0 / np.sqrt(10 ** (0.1 * fso_loss_dB))
+        h_realistic  = h_ideal * loss_scaling[:, None]
 
         bad = ~slant_ok
         if bad.any():
@@ -192,7 +179,7 @@ class DynamicLinkBudget:
             h_realistic[bad, :] = 0.0
 
         # ══════════════════════════════════════════════════════════════
-        # 5. SNR ET SHANNON — via snr.py (ajout par rapport à channel.py)
+        # 4. SNR ET SHANNON — via snr.py
         # ══════════════════════════════════════════════════════════════
 
         B = self.cfg.get("bandwidth_hz", 10e9)
