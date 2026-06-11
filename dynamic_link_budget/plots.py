@@ -15,6 +15,7 @@ def plot_snr_and_rate(
     SNR_real_dB,
     rate_ideal_gbps,
     rate_real_gbps,
+    atm_model="mie_geom",
     save_path=None,
 ):
     """
@@ -33,15 +34,21 @@ def plot_snr_and_rate(
     rate_real_gbps   : array (N,) — débit Shannon réaliste [Gbps]
     save_path        : str optionnel — chemin pour sauvegarder la figure
     """
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle(
-        "FSO LEO Dynamic Link Budget\n"
-        "Real Channel : Mie + Geometric Scattering + Shadowing (3GPP TR 38.811)",
-        fontsize=13, fontweight="bold"
-    )
+    label_map = {
+        "mie_geom":      "Mie + Geometric",
+        "mie_scin":      "Mie + Scintillation",
+        "mie_geom_scin": "Mie + Geometric + Scintillation",
+    }
+    atm_label = label_map.get(atm_model, atm_model)
 
     label_ideal = "Ideal Channel"
-    label_real  = "Real Channel (Mie+Geom+Shadowing)"
+    label_real  = f"Real Channel ({atm_label})"
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle(
+        f"FSO LEO Dynamic Link Budget\nReal Channel : {atm_label} (ITU-R P.1622)",
+        fontsize=13, fontweight="bold"
+    )
     c_ideal     = "steelblue"
     c_real      = "red"
 

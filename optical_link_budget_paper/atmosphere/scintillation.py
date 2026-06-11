@@ -81,7 +81,7 @@ def sigma_dB(
 
     h_arr = np.linspace(h0_m, Z_m, n_points)
     integrand = Cn2_profile(h_arr, C0=C0, vrms=vrms) * h_arr ** (5.0 / 6.0)
-    integral = np.trapezoid(integrand, h_arr)
+    integral = np.trapz(integrand, h_arr)
 
     sigma2_lnN = 2.253 * k ** (7.0 / 6.0) * (1.0 / np.sin(np.radians(el_deg))) ** (11.0 / 6.0) * integral
     sigma2_dBN = (10.0 / np.log(10.0)) ** 2 * sigma2_lnN
