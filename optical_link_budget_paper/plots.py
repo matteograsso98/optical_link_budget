@@ -26,8 +26,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-from optical_link_budget.atmosphere import mie, scintillation
-from optical_link_budget.config import DEFAULT_ATM
+from optical_link_budget_paper.atmosphere import mie, scintillation
+from config import DEFAULT_ATM
 
 
 # ── Colour palette ────────────────────────────────────────────────────────────

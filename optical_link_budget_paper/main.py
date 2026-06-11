@@ -10,9 +10,9 @@ Run from the repo root:
 
 import numpy as np
 
-from optical_link_budget.config import DEFAULT_ATM, DEFAULT_ORBIT, DEFAULT_TERMINAL
-from optical_link_budget.atmosphere import mie, scintillation, geometric
-from optical_link_budget.link import geometry, budget
+from config import DEFAULT_ATM, DEFAULT_ORBIT, DEFAULT_TERMINAL
+from optical_link_budget_paper.atmosphere import mie, scintillation, geometric
+from optical_link_budget_paper.link import geometry, budget
 
 # ── Elevation sweep ───────────────────────────────────────────────────────────
 
@@ -111,5 +111,5 @@ for r in rows:
           f"{r['P_T_geom']:>10.4f}")
 
 # ── Plots ─────────────────────────────────────────────────────────────────────
-from optical_link_budget.plots import plot_atmospheric_impairments
+from optical_link_budget_paper.plots import plot_atmospheric_impairments
 plot_atmospheric_impairments(atm=atm)
