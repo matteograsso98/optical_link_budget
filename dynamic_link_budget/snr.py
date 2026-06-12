@@ -8,6 +8,10 @@ Ajout par rapport à channel.py — non présent dans le code original.
 import numpy as np
 
 
+def _snr_linear(h):
+    return np.sum(np.abs(h) ** 2, axis=1)
+
+
 def compute_snr_dB(h):
     """
     Calcule le SNR en dB à partir du vecteur de canal h.
@@ -22,8 +26,7 @@ def compute_snr_dB(h):
     --------
     SNR_dB : array (U,) en dB
     """
-    SNR_linear = np.sum(np.abs(h) ** 2, axis=1)
-    return 10 * np.log10(np.maximum(SNR_linear, 1e-30))
+    return 10 * np.log10(np.maximum(_snr_linear(h), 1e-30))
 
 
 def compute_shannon_rate(h, bandwidth_hz):
@@ -39,5 +42,4 @@ def compute_shannon_rate(h, bandwidth_hz):
     --------
     rate : array (U,) en bps
     """
-    SNR_linear = np.sum(np.abs(h) ** 2, axis=1)
-    return bandwidth_hz * np.log2(1 + SNR_linear)
+    return bandwidth_hz * np.log2(1 + _snr_linear(h))

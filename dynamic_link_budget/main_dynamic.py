@@ -69,7 +69,7 @@ dlb.precompute_lut(
 N_ts = 100
 
 elevations     = np.concatenate([
-    np.linspace(10, 85, N_ts // 2),
+    np.linspace(10, 85, N_ts // 2, endpoint=False),
     np.linspace(85, 10, N_ts // 2),
 ])
 azimuths_users = np.random.uniform(0, 360, N_user)

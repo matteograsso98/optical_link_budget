@@ -7,7 +7,7 @@ except ImportError:
     print("Warning: 'itur' library not found. Please install it using 'pip install itur'.")
     itur = None
 
-from simulator.auxiliary.utils.load_large_scale_model import load_large_scale_model
+from load_large_scale_model import load_large_scale_model
 
 class Channel:
     def __init__(self, channel_model_config: dict) -> None:
