@@ -61,6 +61,7 @@ def plot_snr_and_rate(
     ax.set_xlabel("Real Slant Range [km]")
     ax.set_ylabel("SNR [dB]")
     ax.set_title("SNR vs Real Slant Range")
+    #ax.set_xlim(300, 500)
     ax.legend(markerscale=3, fontsize=9)
     ax.grid(True, alpha=0.3)
 
@@ -73,6 +74,7 @@ def plot_snr_and_rate(
     ax.set_xlabel("Real Slant Range [km]")
     ax.set_ylabel("Shannon Rate [Gbps]")
     ax.set_title("Rate vs Real Slant Range")
+    #ax.set_xlim(300, 500)
     ax.legend(markerscale=3, fontsize=9)
     ax.grid(True, alpha=0.3)
 

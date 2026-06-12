@@ -40,7 +40,7 @@ cfg = {
     "d_x": 0.5, "d_y": 0.5,
     # Système
     "noise_dBm":        -100.0,
-    "bandwidth_hz":     10e9,
+    "bandwidth_hz":     10e9, #4.4e12,
 }
 
 # ── Utilisateurs — paramètres spatiaux ────────────────────────────────

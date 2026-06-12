@@ -89,12 +89,18 @@ class DynamicLinkBudget:
         if lut_cache_path is not None:
             import os
             meta_path = str(lut_cache_path) + ".elev.npy"
-            if os.path.exists(lut_cache_path) and os.path.exists(meta_path):
-                self._att_lut_dB       = np.load(lut_cache_path)
-                self._att_lut_elev_deg = np.load(meta_path)
-                print(f">>> LUT FSO (P.1622) chargée depuis le cache : "
-                      f"{self._att_lut_dB.shape}")
-                return
+            hE_path   = str(lut_cache_path) + ".hE.npy"
+            if (os.path.exists(lut_cache_path)
+                    and os.path.exists(meta_path)
+                    and os.path.exists(hE_path)):
+                cached_hE = np.load(hE_path)
+                if np.allclose(cached_hE, user_hE_km):
+                    self._att_lut_dB       = np.load(lut_cache_path)
+                    self._att_lut_elev_deg = np.load(meta_path)
+                    print(f">>> LUT FSO (P.1622) chargée depuis le cache : "
+                          f"{self._att_lut_dB.shape}")
+                    return
+                print(">>> Cache LUT invalidé (user_hE_km a changé) — recalcul.")
 
         cfg       = self.cfg
         lam_um    = cfg["lam_um"]
@@ -160,6 +166,7 @@ class DynamicLinkBudget:
         if lut_cache_path is not None:
             np.save(lut_cache_path, losses)
             np.save(str(lut_cache_path) + ".elev.npy", elevation_grid_deg)
+            np.save(str(lut_cache_path) + ".hE.npy",   user_hE_km)
         print(f">>> LUT FSO (P.1622 · {atm_model}) calculée : {losses.shape}")
 
     def _lookup_fso_losses_dB(self, user_indices, elevation_deg):
