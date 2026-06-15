@@ -24,6 +24,9 @@ cfg = {
     "eta_T":        DEFAULT_TERMINAL.eta_T,
     "eta_R":        DEFAULT_TERMINAL.eta_R,
     "Pr_dBm":       DEFAULT_TERMINAL.Pr_dBm,
+    "P_tx":         DEFAULT_TERMINAL.P_tx, # Watt
+    "noise_dBm":    DEFAULT_TERMINAL.noise_dBm,  # Noise power (dBm) — convenience parameter for SNR calculations
+    "bandwidth_hz": DEFAULT_TERMINAL.bandwidth_hz, #4.4e12,
     # Atmosphère FSO — paramètres globaux (Kim / ITU-R P.1622)
     "LW":           DEFAULT_ATM.LW,
     "N_droplets":   DEFAULT_ATM.N,
@@ -35,12 +38,12 @@ cfg = {
     "C0":           DEFAULT_ATM.C0,
     # Modèle atmosphérique : "mie_geom" | "mie_scin" | "mie_geom_scin"
     "atm_model":    "mie_geom_scin",
-    # UPA (défini ici, à déplacer dans config.py si souhaité)
-    "N_x": 16, "N_y": 16,
-    "d_x": 0.5, "d_y": 0.5,
-    # Système
-    "noise_dBm":        -100.0,
-    "bandwidth_hz":     10e9, #4.4e12,
+    # UPA
+    "N_x": DEFAULT_TERMINAL.N_x, 
+    "N_y": DEFAULT_TERMINAL.N_y,
+    "d_x": DEFAULT_TERMINAL.d_x, 
+    "d_y": DEFAULT_TERMINAL.d_y,
+    
 }
 
 # ── Utilisateurs — paramètres spatiaux ────────────────────────────────

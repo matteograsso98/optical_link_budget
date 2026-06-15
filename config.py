@@ -34,7 +34,6 @@ class AtmosphereConfig:
     N:   float = 0.5        # Cloud droplet concentration (cm^{-3})
     phi: float = 1.6        # Kim model particle-size coefficient
 
-
 # ---------------------------------------------------------------------------
 # Satellite / orbit
 # ---------------------------------------------------------------------------
@@ -70,6 +69,17 @@ class TerminalConfig:
 
     # Required received power
     Pr_dBm: float = -32.5   # Target received power (dBm)
+
+    # Convenience parameters for SNR calculations
+    P_tx: float = 1000.0         # Transmit power (W) — convenience parameter for SNR calculations
+    noise_dBm: float = -100.0  # Noise power (dBm) — convenience parameter for SNR calculations
+    bandwidth_hz: float = 10e9 # bandwidth (Hz) — convenience parameter for SNR calculations
+
+    # UPA geometry (for MIMO / beamforming)
+    N_x: int   = 16
+    N_y: int   = 16
+    d_x: float = 0.5
+    d_y: float = 0.5
 
 
 # ---------------------------------------------------------------------------

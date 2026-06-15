@@ -34,6 +34,7 @@ class DynamicLinkBudget:
                            link_config["Dr_m"], link_config["lam_um"])
         noise_dBm    = link_config.get("noise_dBm", -100.0)
         self.noise_W = 10 ** (noise_dBm / 10) * 1e-3
+        self.P_tx    = link_config.get("P_tx", 1.0)
 
         # ── LUT pertes atmosphériques FSO — (U, G) ─────────────────────
         self._att_lut_dB       = None   # (U, G) float64 [dB]
@@ -288,9 +289,9 @@ class DynamicLinkBudget:
             "h_realistic": h_realistic,
             "FSPL_dB":     FSPL_dB,
             "A_atm_dB":    fso_loss_dB,
-            "SNR_dB":      compute_snr_dB(h_ideal),
-            "SNR_real_dB": compute_snr_dB(h_realistic),
-            "rate_ideal":  compute_shannon_rate(h_ideal,     B),
-            "rate_real":   compute_shannon_rate(h_realistic, B),
+            "SNR_dB":      compute_snr_dB(h_ideal,     self.P_tx),
+            "SNR_real_dB": compute_snr_dB(h_realistic, self.P_tx),
+            "rate_ideal":  compute_shannon_rate(h_ideal,     B, self.P_tx),
+            "rate_real":   compute_shannon_rate(h_realistic, B, self.P_tx),
             "slant_m":     d,
         }
