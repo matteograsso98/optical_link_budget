@@ -70,17 +70,8 @@ dlb.precompute_lut(
 # ── Simulation passage LEO ─────────────────────────────────────────────
 
 N_ts = 100
-
-elevations     = np.concatenate([
-    np.linspace(10, 85, N_ts // 2, endpoint=False),
-    np.linspace(85, 10, N_ts // 2),
-])
 azimuths_users = np.random.uniform(0, 360, N_user)
 user_indices   = np.arange(N_user)
-
-# Each user has a fixed angular offset from the reference satellite pass,
-# reflecting their different ground positions within the coverage area.
-user_el_offset = np.random.uniform(-20, 20, N_user)   # deg
 
 all_slant      = []
 all_SNR_ideal  = []
@@ -89,10 +80,13 @@ all_rate_ideal = []
 all_rate_real  = []
 
 for ts in range(N_ts):
-    el_ts   = np.clip(elevations[ts] + user_el_offset, 10, 85)
+    # Élévation indépendante par utilisateur à chaque pas de temps,
+    # uniforme sur [10°, 85°] — reproduit la diversité géographique
+    # naturelle de channel.py sans mécanique orbitale explicite.
+    el_ts   = np.random.uniform(10, 85, N_user)
     slant_m = np.array([
-        slant_distance_km(el, hE, cfg["hS_km"]) * 1e3
-        for el, hE in zip(el_ts, user_hE_km)
+        slant_distance_km(el_ts[u], user_hE_km[u], cfg["hS_km"]) * 1e3
+        for u in range(N_user)
     ])
 
     res = dlb.compute(ts, slant_m, azimuths_users, el_ts,
