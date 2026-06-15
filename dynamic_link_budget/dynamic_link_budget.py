@@ -34,7 +34,17 @@ class DynamicLinkBudget:
                            link_config["Dr_m"], link_config["lam_um"])
         noise_dBm    = link_config.get("noise_dBm", -100.0)
         self.noise_W = 10 ** (noise_dBm / 10) * 1e-3
-        self.P_tx    = link_config.get("P_tx", 1.0)
+
+        # ── Puissance effective : P_tx · G_T · η_T · L_T · η_R · L_R ──
+        P_tx    = link_config.get("P_tx", 1.0)
+        G_T     = budget.transmit_gain(link_config["Theta_T_rad"])
+        L_T_dB  = budget.pointing_loss_dB(G_T,      link_config["theta_T_rad"])
+        L_R_dB  = budget.pointing_loss_dB(self.G_R, link_config["theta_R_rad"])
+        eta_T   = link_config.get("eta_T", 1.0)
+        eta_R   = link_config.get("eta_R", 1.0)
+        self.P_tx = (P_tx * G_T
+                     * eta_T * 10 ** (L_T_dB / 10)
+                     * eta_R * 10 ** (L_R_dB / 10))
 
         # ── LUT pertes atmosphériques FSO — (U, G) ─────────────────────
         self._att_lut_dB       = None   # (U, G) float64 [dB]
@@ -239,7 +249,7 @@ class DynamicLinkBudget:
                 np.exp(-1j * safe_d * 2*np.pi / lam) / safe_d
             )
 
-        h_ideal = xi * radiation_pattern * phase_path_loss[:, None]
+        H_ideal = xi * radiation_pattern * phase_path_loss[:, None]
 
         # ══════════════════════════════════════════════════════════════
         # 2. PERTES ATMOSPHÉRIQUES FSO — ITU-R P.1622
@@ -261,16 +271,16 @@ class DynamicLinkBudget:
             ])
 
         # ══════════════════════════════════════════════════════════════
-        # 3. H_REALISTIC
+        # 3. H_SYS — canal réaliste avec pertes atmosphériques
         # ══════════════════════════════════════════════════════════════
 
         loss_scaling = 1.0 / np.sqrt(10 ** (0.1 * fso_loss_dB))
-        h_realistic  = h_ideal * loss_scaling[:, None]
+        H_sys        = H_ideal * loss_scaling[:, None]
 
         bad = ~slant_ok
         if bad.any():
-            h_ideal[bad, :]     = 0.0
-            h_realistic[bad, :] = 0.0
+            H_ideal[bad, :] = 0.0
+            H_sys[bad, :]   = 0.0
 
         # ══════════════════════════════════════════════════════════════
         # 4. SNR ET SHANNON
@@ -285,13 +295,13 @@ class DynamicLinkBudget:
 
         return {
             "ts_index":    ts_index,
-            "h_ideal":     h_ideal,
-            "h_realistic": h_realistic,
+            "H_ideal":     H_ideal,   # (K, N) — sans pertes atm.
+            "H_sys":       H_sys,     # (K, N) — avec pertes atm.
             "FSPL_dB":     FSPL_dB,
             "A_atm_dB":    fso_loss_dB,
-            "SNR_dB":      compute_snr_dB(h_ideal,     self.P_tx),
-            "SNR_real_dB": compute_snr_dB(h_realistic, self.P_tx),
-            "rate_ideal":  compute_shannon_rate(h_ideal,     B, self.P_tx),
-            "rate_real":   compute_shannon_rate(h_realistic, B, self.P_tx),
+            "SNR_dB":      compute_snr_dB(H_ideal, self.P_tx),
+            "SNR_real_dB": compute_snr_dB(H_sys,   self.P_tx),
+            "rate_ideal":  compute_shannon_rate(H_ideal, B, self.P_tx),
+            "rate_real":   compute_shannon_rate(H_sys,   B, self.P_tx),
             "slant_m":     d,
         }

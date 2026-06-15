@@ -1,46 +1,47 @@
 """
 snr.py
 ======
-Calcul du SNR et du débit Shannon à partir des matrices de canal H.
-Ajout par rapport à channel.py — non présent dans le code original.
+Calcul du SNR et du débit Shannon à partir de la matrice de canal H_sys.
 """
 
 import numpy as np
 
 
-def _snr_linear(h, P_tx):
-    return P_tx * np.sum(np.abs(h) ** 2, axis=1)
+def _snr_linear(H_sys, P_tx):
+    # SNR_i = P_tx · ||h_i||²  (somme incohérente — beamforming MRT optimal)
+    return P_tx * np.sum(np.abs(H_sys) ** 2, axis=1)
 
 
-def compute_snr_dB(h, P_tx):
+def compute_snr_dB(H_sys, P_tx):
     """
-    Calcule le SNR en dB à partir du vecteur de canal h.
+    Calcule le SNR en dB pour chaque utilisateur.
 
-    SNR = ||h||²  (ξ dans h absorbe déjà G_R / noise_W)
+    SNR_i = P_tx · ||h_i||²
 
     Paramètres
     ----------
-    h : array complexe (U, N_ant)
+    H_sys : array complexe (K, N) — matrice canal système (K users, N antennes)
+    P_tx  : float                 — puissance d'émission (W)
 
     Retourne
     --------
-    SNR_dB : array (U,) en dB
+    SNR_dB : array (K,) en dB
     """
-    return 10 * np.log10(np.maximum(_snr_linear(h, P_tx), 1e-30))
+    return 10 * np.log10(np.maximum(_snr_linear(H_sys, P_tx), 1e-30))
 
 
-def compute_shannon_rate(h, bandwidth_hz, P_tx):
+def compute_shannon_rate(H_sys, bandwidth_hz, P_tx):
     """
-    Calcule le débit Shannon : R = B · log2(1 + SNR).
+    Calcule le débit Shannon : R_i = B · log2(1 + SNR_i).
 
     Paramètres
     ----------
-    h            : array complexe (U, N_ant)
-    bandwidth_hz : float — largeur de bande en Hz
-    P_tx         : float — puissance d'émission
+    H_sys        : array complexe (K, N) — matrice canal système
+    bandwidth_hz : float                 — largeur de bande (Hz)
+    P_tx         : float                 — puissance d'émission (W)
 
     Retourne
     --------
-    rate : array (U,) en bps
+    rate : array (K,) en bps
     """
-    return bandwidth_hz * np.log2(1 + _snr_linear(h, P_tx))
+    return bandwidth_hz * np.log2(1 + _snr_linear(H_sys, P_tx))

@@ -71,7 +71,7 @@ class TerminalConfig:
     Pr_dBm: float = -32.5   # Target received power (dBm)
 
     # Convenience parameters for SNR calculations
-    P_tx: float = 1000.0         # Transmit power (W) — convenience parameter for SNR calculations
+    P_tx: float = 1.0         # Transmit power (W) — convenience parameter for SNR calculations
     noise_dBm: float = -100.0  # Noise power (dBm) — convenience parameter for SNR calculations
     bandwidth_hz: float = 10e9 # bandwidth (Hz) — convenience parameter for SNR calculations
 
