@@ -1,60 +1,85 @@
 """
-dynamic_link_budget.py
-======================
-Canal FSO dynamique — adapté de channel.py pour les liaisons optiques LEO.
+DynamicLinkBudget — FSO LEO channel model
+==========================================
+Optical counterpart of channel.Channel (the RF model).
 
-Différences par rapport à channel.py (RF) :
-  - Suppression du fading à grande échelle 3GPP (load_large_scale_model)
-    → non pertinent pour FSO optique
-  - Suppression ITU-R P.618 (RF)
-    → remplacé par ITU-R P.1622 : Mie + Géométrique/Scintillation via LUT FSO
-  - LUT 2D (U, G) : une ligne par utilisateur, vectorisé sur l'élévation
-  - Steering vector UPA via antenna.py
-  - SNR + Shannon via snr.py
+Structural differences from the RF model:
+  - No 3GPP large-scale fading (not applicable to FSO)
+  - No ITU-R P.618 (RF rain/gas); replaced by ITU-R P.1622 FSO atmosphere
+  - 2-D (U × G) LUT: one row per user, vectorised over elevation angle
+  - Shannon capacity via snr.py
+
+Three atmospheric models (set via AtmosphereConfig.atm_model):
+  "mie_geom"      — Mie (ITU-R P.1622) + geometric scattering (Kim/Liang)
+  "mie_scin"      — Mie + amplitude scintillation (ITU-R P.1622)
+  "mie_geom_scin" — Mie + geometric + scintillation (most complete)
 """
 
+from __future__ import annotations
+
+import os
+
 import numpy as np
+
 from optical_link_budget_paper.atmosphere import mie, geometric, scintillation
 from optical_link_budget_paper.link import budget
-from dynamic_link_budget.antenna import upa_steering_vector
+from channel_model.lut_interp import lookup_lut_dB
 from dynamic_link_budget.snr import compute_snr_dB, compute_shannon_rate
+from config import AtmosphereConfig, OrbitConfig, TerminalConfig
 
 
 class DynamicLinkBudget:
+    """
+    Dynamic FSO link budget for a LEO satellite pass.
 
-    def __init__(self, link_config: dict) -> None:
-        self.cfg = link_config
+    Parameters
+    ----------
+    atm : AtmosphereConfig
+        Wavelength, turbulence profile, Kim/cloud model parameters, and
+        the atmospheric model selector (atm_model).
+    orb : OrbitConfig
+        Satellite altitude.
+    trm : TerminalConfig
+        Aperture, optical efficiencies, transmit power, noise, bandwidth.
 
-        # atm_model : "mie_geom" | "mie_scin" | "mie_geom_scin"
-        self.atm_model = link_config.get("atm_model", "mie_geom")
+    Usage
+    -----
+    1. Instantiate with typed config objects.
+    2. Call ``precompute_lut(user_hE_km, ...)`` once before the simulation
+       loop to build the (U × G) atmospheric loss table.
+    3. Call ``compute(ts_index, slant_range_m, az_deg, el_deg)`` at every
+       timestep to get channel matrices, SNR, and Shannon rates.
+    """
 
-        # ── Paramètres optiques fixes ──────────────────────────────────
-        self.lam_m   = link_config["lam_um"] * 1e-6
-        self.G_R     = budget.receive_gain(
-                           link_config["Dr_m"], link_config["lam_um"])
-        noise_dBm    = link_config.get("noise_dBm", -100.0)
-        self.noise_W = 10 ** (noise_dBm / 10) * 1e-3
+    def __init__(
+        self,
+        atm: AtmosphereConfig,
+        orb: OrbitConfig,
+        trm: TerminalConfig,
+    ) -> None:
+        self.atm = atm
+        self.orb = orb
+        self.trm = trm
 
-        # ── Puissance effective : P_tx · G_T · η_T · L_T · η_R · L_R ──
-        P_tx    = link_config.get("P_tx", 1.0)
-        G_T     = budget.transmit_gain(link_config["Theta_T_rad"])
-        L_T_dB  = budget.pointing_loss_dB(G_T,      link_config["theta_T_rad"])
-        L_R_dB  = budget.pointing_loss_dB(self.G_R, link_config["theta_R_rad"])
-        eta_T   = link_config.get("eta_T", 1.0)
-        eta_R   = link_config.get("eta_R", 1.0)
-        self.P_tx = (P_tx * G_T
-                     * eta_T * 10 ** (L_T_dB / 10)
-                     * eta_R * 10 ** (L_R_dB / 10))
+        self.lam_m   = atm.lam_um * 1e-6
+        self.G_R     = budget.receive_gain(trm.Dr_m, atm.lam_um)
+        self.noise_W = 10 ** (trm.noise_dBm / 10) * 1e-3
 
-        # ── LUT pertes atmosphériques FSO — (U, G) ─────────────────────
+        G_T_lin = budget.transmit_gain(trm.Theta_T_rad)
+        L_T_dB  = budget.pointing_loss_dB(G_T_lin, trm.theta_T_rad)
+        L_R_dB  = budget.pointing_loss_dB(self.G_R,  trm.theta_R_rad)
+
+        self.G_T   = G_T_lin
+        # Effective transmit power after terminal optical losses
+        self.P_eff = (trm.P_tx
+                      * trm.eta_T * 10 ** (L_T_dB / 10)
+                      * trm.eta_R * 10 ** (L_R_dB / 10))
+
+        # Atmospheric LUT — populated by precompute_lut()
         self._att_lut_dB       = None   # (U, G) float64 [dB]
         self._att_lut_elev_deg = None   # (G,)   float64 [deg]
-        self._scin_coeff       = None   # pré-facteur scintillation
-        self._scin_dBfact      = None   # conversion variance → dB
 
-    # ──────────────────────────────────────────────────────────────────
-    # LUT ITU-R P.1622 — 2D (utilisateurs × élévation)
-    # ──────────────────────────────────────────────────────────────────
+    # ── Atmospheric LUT (ITU-R P.1622) ───────────────────────────────────────
 
     def precompute_lut(
         self,
@@ -64,30 +89,18 @@ class DynamicLinkBudget:
         lut_cache_path=None,
     ) -> None:
         """
-        Précalcule les pertes atmosphériques FSO pour chaque utilisateur
-        sur une grille d'élévations.
+        Build the (U × G) atmospheric loss LUT for every user across an
+        elevation grid. Mirrors channel.Channel.precompute_attenuation_lut().
 
-        LUT résultante : (U, G) float64 [dB]
-          U = nombre d'utilisateurs  (longueur de user_hE_km)
-          G = points de la grille d'élévation
-
-        Paramètres
+        Parameters
         ----------
-        user_hE_km : array (U,)
-            Altitude au-dessus du MSL de chaque utilisateur [km].
-            Utilisé par les modèles Mie et géométrique.
-        user_h0_m : array (U,), optionnel
-            Hauteur de la station au-dessus du sol local [m].
-            Requis pour atm_model ∈ {"mie_scin", "mie_geom_scin"}.
-        elevation_grid_deg : array, optionnel
-            Grille d'élévation en degrés (défaut : 10 à 90 par 0.5°).
-        lut_cache_path : str, optionnel
-            Chemin .npy pour la mise en cache sur disque.
-
-        Modèles atmosphériques (cfg["atm_model"]) :
-          "mie_geom"      — Mie + diffusion géométrique (Kim, Liang et al.)
-          "mie_scin"      — Mie + scintillation (ITU-R P.1622)
-          "mie_geom_scin" — Mie + géométrique + scintillation
+        user_hE_km        : (U,) ground station altitude above MSL [km].
+        user_h0_m         : (U,) station height above local ground [m].
+                            Required when atm_model includes scintillation.
+        elevation_grid_deg: (G,) elevation grid [deg].
+                            Default: 10° to 90° in 0.5° steps.
+        lut_cache_path    : optional .npy path for disk caching.
+                            Cache is invalidated when user_hE_km changes.
         """
         user_hE_km = np.asarray(user_hE_km, dtype=np.float64)
         U = user_hE_km.size
@@ -96,212 +109,178 @@ class DynamicLinkBudget:
             elevation_grid_deg = np.arange(10, 90.5, 0.5, dtype=np.float64)
         G = elevation_grid_deg.size
 
-        # ── Cache disque ─────────────────────────────────────────────────────
+        # Disk cache — skip recomputation when inputs are unchanged
         if lut_cache_path is not None:
-            import os
             meta_path = str(lut_cache_path) + ".elev.npy"
             hE_path   = str(lut_cache_path) + ".hE.npy"
             if (os.path.exists(lut_cache_path)
                     and os.path.exists(meta_path)
-                    and os.path.exists(hE_path)):
-                cached_hE = np.load(hE_path)
-                if np.allclose(cached_hE, user_hE_km):
-                    self._att_lut_dB       = np.load(lut_cache_path)
-                    self._att_lut_elev_deg = np.load(meta_path)
-                    print(f">>> LUT FSO (P.1622) chargée depuis le cache : "
-                          f"{self._att_lut_dB.shape}")
-                    return
-                print(">>> Cache LUT invalidé (user_hE_km a changé) — recalcul.")
+                    and os.path.exists(hE_path)
+                    and np.allclose(np.load(hE_path), user_hE_km)):
+                self._att_lut_dB       = np.load(lut_cache_path)
+                self._att_lut_elev_deg = np.load(meta_path)
+                return
 
-        cfg       = self.cfg
-        lam_um    = cfg["lam_um"]
-        atm_model = self.atm_model
-        LW        = cfg["LW"]
-        N_drop    = cfg["N_droplets"]
-        hA_km     = cfg["hA_km"]
-        phi       = cfg["phi"]
+        atm       = self.atm
+        atm_model = atm.atm_model
+        lam_um    = atm.lam_um
 
-        # ── Pré-calcul des intégrales de scintillation (une par utilisateur) ──
-        # L'intégrale ∫_{h0}^{Z} Cn²(h)·h^(5/6) dh est indépendante de
-        # l'élévation → on l'évalue une seule fois par utilisateur, puis on
-        # applique le facteur 1/sin^(11/6)(el) vectorisé sur toute la grille.
+        # Pre-compute per-user scintillation path integrals.
+        # The integral ∫Cn²(h)·h^{5/6}dh is independent of elevation, so we
+        # evaluate it once per user and apply the sin^{-11/6}(el) factor over
+        # the full elevation grid in the LUT loop below.
+        scin_coeff = scin_dBfact = None
         scin_integrals = None
-        if atm_model in ("mie_scin", "mie_geom_scin"):
+
+        if "scin" in atm_model:
             if user_h0_m is None:
                 raise ValueError(
-                    "user_h0_m est requis pour atm_model "
-                    f"'{atm_model}'."
+                    f"user_h0_m is required for atm_model='{atm_model}'."
                 )
             user_h0_m = np.asarray(user_h0_m, dtype=np.float64)
-            Z_m  = cfg.get("Z_m",  20_000.0)
-            C0   = cfg.get("C0",   1.7e-14)
-            vrms = cfg.get("vrms", 21.0)
+            k = 2.0 * np.pi / self.lam_m
+            scin_coeff  = 2.253 * k ** (7.0 / 6.0)
+            scin_dBfact = (10.0 / np.log(10.0)) ** 2
 
             scin_integrals = np.empty(U, dtype=np.float64)
             for u in range(U):
-                h = np.linspace(user_h0_m[u], Z_m, 80_000)
-                integrand = scintillation.Cn2_profile(h, C0=C0, vrms=vrms) * h ** (5.0 / 6.0)
+                h = np.linspace(user_h0_m[u], atm.Z_m, 80_000)
+                integrand = scintillation.Cn2_profile(
+                    h, C0=atm.C0, vrms=atm.vrms
+                ) * h ** (5.0 / 6.0)
                 scin_integrals[u] = np.trapz(integrand, h)
 
-            k = 2.0 * np.pi / (lam_um * 1e-6)
-            self._scin_coeff  = 2.253 * k ** (7.0 / 6.0)
-            self._scin_dBfact = (10.0 / np.log(10.0)) ** 2
-
-        # ── Construction de la LUT (U, G) ─────────────────────────────────────
+        # Build LUT
         losses = np.zeros((U, G), dtype=np.float64)
 
         for i, el in enumerate(elevation_grid_deg):
-
-            # Mie — hE_km varie par utilisateur
             losses[:, i] = np.array(
                 [mie.attenuation_dB(lam_um, hE, el) for hE in user_hE_km]
             )
 
-            if atm_model in ("mie_geom", "mie_geom_scin"):
-                losses[:, i] += np.array(
-                    [geometric.attenuation_dB(el, LW, N_drop, lam_um, hA_km, hE, phi)
-                     for hE in user_hE_km]
-                )
+            if "geom" in atm_model:
+                losses[:, i] += np.array([
+                    geometric.attenuation_dB(
+                        el, atm.LW, atm.N, lam_um, atm.hA_km, hE, atm.phi
+                    )
+                    for hE in user_hE_km
+                ])
 
-            if atm_model in ("mie_scin", "mie_geom_scin"):
-                # sigma²_lnN = coeff · (1/sin el)^(11/6) · integral(u)
+            if "scin" in atm_model:
                 sin_el     = np.sin(np.radians(el))
-                sigma2_lnN = (self._scin_coeff
+                sigma2_lnN = (scin_coeff
                               * (1.0 / sin_el) ** (11.0 / 6.0)
                               * scin_integrals)
-                losses[:, i] += np.sqrt(self._scin_dBfact * sigma2_lnN)
+                losses[:, i] += np.sqrt(scin_dBfact * sigma2_lnN)
 
         self._att_lut_dB       = losses
         self._att_lut_elev_deg = elevation_grid_deg
 
         if lut_cache_path is not None:
-            np.save(lut_cache_path, losses)
-            np.save(str(lut_cache_path) + ".elev.npy", elevation_grid_deg)
-            np.save(str(lut_cache_path) + ".hE.npy",   user_hE_km)
-        print(f">>> LUT FSO (P.1622 · {atm_model}) calculée : {losses.shape}")
+            np.save(lut_cache_path,                        losses)
+            np.save(str(lut_cache_path) + ".elev.npy",    elevation_grid_deg)
+            np.save(str(lut_cache_path) + ".hE.npy",      user_hE_km)
 
-    def _lookup_fso_losses_dB(self, user_indices, elevation_deg):
+    # ── Channel computation ───────────────────────────────────────────────────
+
+    def compute(
+        self,
+        ts_index: int,
+        slant_range_m,
+        az_deg,
+        el_deg,
+        user_indices=None,
+    ) -> dict:
         """
-        Interpolation 1-D par utilisateur dans la LUT (U, G).
-        Identique à channel.py :: _lookup_attenuation_dB.
-        """
-        grid   = self._att_lut_elev_deg
-        elev   = np.clip(np.asarray(elevation_deg, dtype=np.float64),
-                         grid[0], grid[-1])
-        idx_f  = (elev - grid[0]) / (grid[1] - grid[0])
-        idx_lo = np.floor(idx_f).astype(np.int64)
-        idx_hi = np.minimum(idx_lo + 1, grid.size - 1)
-        frac   = idx_f - idx_lo
-        ui     = np.asarray(user_indices, dtype=np.int64)
-        return ((1.0 - frac) * self._att_lut_dB[ui, idx_lo]
-                + frac        * self._att_lut_dB[ui, idx_hi])
+        Compute FSO channel matrices, SNR, and Shannon capacity.
 
-    # ──────────────────────────────────────────────────────────────────
-    # compute() — canal FSO, sans fading 3GPP
-    # ──────────────────────────────────────────────────────────────────
+        Mirrors channel.Channel.compute() for API consistency.
 
-    def compute(self, ts_index, slant_range_m, az_deg, el_deg,
-                user_indices=None):
-        """
-        Calcule H_ideal, H_realistic, SNR et débit Shannon.
-
-        Paramètres
+        Parameters
         ----------
-        ts_index      : int
-        slant_range_m : array (U,) [m]
-        az_deg        : array (U,) [deg]
-        el_deg        : array (U,) [deg]
-        user_indices  : array (U,) int, optionnel
-            Indices des utilisateurs dans la LUT.
-            Défaut : 0, 1, …, U-1 (tous les utilisateurs dans l'ordre).
-            Utile quand on simule un sous-ensemble d'utilisateurs actifs.
+        ts_index      : timestep index (forwarded to the output dict).
+        slant_range_m : (U,) slant range from ground station to satellite [m].
+        az_deg        : (U,) azimuth angle [deg] — not used in FSO (no spatial
+                        multiplexing), kept for API symmetry with Channel.
+        el_deg        : (U,) elevation angle [deg].
+        user_indices  : (U,) int row indices into the LUT.
+                        Defaults to 0, 1, …, U-1.
 
-        Retourne
-        --------
-        dict : h_ideal, h_realistic, SNR_dB, SNR_real_dB,
-               rate_ideal, rate_real, FSPL_dB, A_atm_dB, slant_m
+        Returns
+        -------
+        dict with keys:
+            ts_index   — echo of ts_index.
+            H_ideal    — (U, 1) complex, free-space channel matrix.
+            H_sys      — (U, 1) complex, channel with atmospheric losses applied.
+            FSPL_dB    — (U,)  free-space path loss [dB].
+            A_atm_dB   — (U,)  total atmospheric attenuation [dB].
+            SNR_dB     — (U,)  ideal SNR [dB].
+            SNR_real_dB— (U,)  realistic SNR with atmospheric losses [dB].
+            rate_ideal — (U,)  Shannon capacity, ideal channel [bps].
+            rate_real  — (U,)  Shannon capacity, realistic channel [bps].
+            slant_m    — (U,)  slant range [m].
         """
         lam = self.lam_m
         el  = np.asarray(el_deg,        dtype=np.float64)
-        az  = np.asarray(az_deg,        dtype=np.float64)
         d   = np.asarray(slant_range_m, dtype=np.float64)
         U   = el.size
 
         if user_indices is None:
             user_indices = np.arange(U, dtype=np.int64)
 
-        # ══════════════════════════════════════════════════════════════
-        # 1. H_IDEAL — identique à channel.py
-        # ══════════════════════════════════════════════════════════════
-
-        radiation_pattern = upa_steering_vector(
-            az, el,
-            self.cfg["N_x"], self.cfg["N_y"],
-            self.cfg["d_x"], self.cfg["d_y"],
-        )
-
-        xi = np.sqrt(self.G_R / self.noise_W) / (4 * np.pi / lam)
+        # ── Ideal channel matrix ─────────────────────────────────────────────
+        # H_ideal[u, 0] = ξ · G_T · exp(−j 2π d/λ) / d
+        # Shape (U, 1): FSO is a scalar channel per user (no spatial multiplexing).
+        xi = np.sqrt(self.G_R / self.noise_W) / (4.0 * np.pi / lam)
 
         slant_ok = np.isfinite(d) & (d > 0)
         safe_d   = np.where(slant_ok, d, np.nan)
         with np.errstate(divide="ignore", invalid="ignore"):
-            phase_path_loss = (
-                np.exp(-1j * safe_d * 2*np.pi / lam) / safe_d
-            )
+            phase_path_loss = np.exp(-1j * safe_d * 2.0 * np.pi / lam) / safe_d
 
-        H_ideal = xi * radiation_pattern * phase_path_loss[:, None]
+        H_ideal = xi * phase_path_loss[:, None] * self.G_T   # (U, 1)
 
-        # ══════════════════════════════════════════════════════════════
-        # 2. PERTES ATMOSPHÉRIQUES FSO — ITU-R P.1622
-        #    LUT (U, G) : chaque utilisateur a son propre profil
-        # ══════════════════════════════════════════════════════════════
-
+        # ── Atmospheric FSO losses (ITU-R P.1622) ───────────────────────────
         if self._att_lut_dB is not None:
-            fso_loss_dB = self._lookup_fso_losses_dB(user_indices, el)
+            fso_loss_dB = lookup_lut_dB(
+                self._att_lut_dB, self._att_lut_elev_deg, user_indices, el
+            )
         else:
-            # Fallback : calcul à la volée avec paramètres globaux
-            cfg = self.cfg
+            # Fallback: on-the-fly computation using global config values
+            atm = self.atm
             fso_loss_dB = np.array([
-                mie.attenuation_dB(cfg["lam_um"], cfg["hE_km"], e) +
-                geometric.attenuation_dB(
-                    e, cfg["LW"], cfg["N_droplets"],
-                    cfg["lam_um"], cfg["hA_km"],
-                    cfg["hE_km"], cfg["phi"])
+                mie.attenuation_dB(atm.lam_um, atm.hE_km, e)
+                + geometric.attenuation_dB(
+                    e, atm.LW, atm.N, atm.lam_um, atm.hA_km, atm.hE_km, atm.phi
+                )
                 for e in el
             ])
 
-        # ══════════════════════════════════════════════════════════════
-        # 3. H_SYS — canal réaliste avec pertes atmosphériques
-        # ══════════════════════════════════════════════════════════════
-
+        # ── Realistic channel matrix ─────────────────────────────────────────
         loss_scaling = 1.0 / np.sqrt(10 ** (0.1 * fso_loss_dB))
-        H_sys        = H_ideal * loss_scaling[:, None]
+        H_sys = H_ideal * loss_scaling[:, None]               # (U, 1)
 
+        # Zero out non-visible links so downstream rate = 0
         bad = ~slant_ok
         if bad.any():
             H_ideal[bad, :] = 0.0
             H_sys[bad, :]   = 0.0
 
-        # ══════════════════════════════════════════════════════════════
-        # 4. SNR ET SHANNON
-        # ══════════════════════════════════════════════════════════════
-
-        B = self.cfg.get("bandwidth_hz", 10e9)
-
+        # ── FSPL, SNR, Shannon capacity ──────────────────────────────────────
         with np.errstate(divide="ignore"):
-            FSPL_dB = 20 * np.log10(
-                np.maximum(4*np.pi*d / lam, 1e-30)
-            )
+            FSPL_dB = 20.0 * np.log10(np.maximum(4.0 * np.pi * d / lam, 1e-30))
+
+        B = self.trm.bandwidth_hz
 
         return {
-            "ts_index":    ts_index,
-            "H_ideal":     H_ideal,   # (K, N) — sans pertes atm.
-            "H_sys":       H_sys,     # (K, N) — avec pertes atm.
-            "FSPL_dB":     FSPL_dB,
-            "A_atm_dB":    fso_loss_dB,
-            "SNR_dB":      compute_snr_dB(H_ideal, self.P_tx),
-            "SNR_real_dB": compute_snr_dB(H_sys,   self.P_tx),
-            "rate_ideal":  compute_shannon_rate(H_ideal, B, self.P_tx),
-            "rate_real":   compute_shannon_rate(H_sys,   B, self.P_tx),
-            "slant_m":     d,
+            "ts_index":     ts_index,
+            "H_ideal":      H_ideal,
+            "H_sys":        H_sys,
+            "FSPL_dB":      FSPL_dB,
+            "A_atm_dB":     fso_loss_dB,
+            "SNR_dB":       compute_snr_dB(H_ideal, self.P_eff),
+            "SNR_real_dB":  compute_snr_dB(H_sys,   self.P_eff),
+            "rate_ideal":   compute_shannon_rate(H_ideal, B, self.P_eff),
+            "rate_real":    compute_shannon_rate(H_sys,   B, self.P_eff),
+            "slant_m":      d,
         }

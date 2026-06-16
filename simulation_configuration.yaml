@@ -1,0 +1,133 @@
+general:
+  simulation_name: simulation_20000users_600s_1ts #simulation_20000users_6000s_1sTS
+  simulation_start_time: 2025-03-28 11:00:00.000000+00:00  #change to 10:00 for 24h sim
+  #camilla in HO actually uses start_time = datetime(2025, 3, 28, 11, 0, 0, TimeZone="+00:00");
+  simulation_duration: 600 #86400 #600
+  simulation_timestep: 1
+
+offline:
+  constellation:
+    name: TASI_VLEO
+    altitude_km: 310
+    inclination_deg: 65
+    num_planes: 52
+    sats_per_plane: 40
+    phasing_factor: 10
+    raan_0_deg: 0
+
+  user_deployment:
+    total_users: 20000
+    distribution_percentage:
+      urban: 0.75
+      maritime: 0.05
+      rural: 0.2 # these are generate uniformly. Thus, I have 20% of uniform users
+    hotspot_file: simulator/data/inputs/hotspots.csv
+    service_area_file: simulator/data/inputs/ho_europe.geojson
+
+  ground_stations:
+    ground_station_file: simulator/data/inputs/gateways.csv
+
+  traffic_model:
+    total_users: 20000
+    total_timestamps: 600 # 86400
+    classes:
+      - name: LiveVideoStreaming
+        probability: 0.52
+      - name: VideoOnDemand
+        probability: 0.07
+      - name: BulkDataTransfer
+        probability: 0.12
+      - name: VoiceVideoIP
+        probability: 0.15
+      - name: WebBrowsingHTTP2
+        probability: 0.14
+
+online:
+  # When true (default) run_online loads traffic_profiles.npz and uses it to
+  # decide which users are active each timestep.  When false, the traffic file
+  # is ignored and every user is treated as CONNECTED at every timestep —
+  # useful for pure-handover / pure-routing benchmark runs where you don't want
+  # the traffic model masking out users.  CLI override: --no-traffic
+  use_traffic: true
+  algorithms:
+    handover:
+      ho_ts: 1
+      active_algorithm: SDQL #ME_OFC #SDQL 
+      params:      
+        sdql_onnx_path: /Users/mattteo/Downloads/HANDINGOVER_simulator/ONNX/q_NN_50users_30channels_SOFTMAX.mat.onnx
+        Rmin: 2e6
+        min_elevation_angle_deg: 36.55
+        max_beam_capacity: 256
+        T_A_seconds: 1
+        T_H_seconds: 90
+        diagnostic_user_ids: [0, 5, 42, 1000]
+    rrm:
+      active_algorithm: HRRM
+      sinr_threshold_db: -6
+      target_outage_percent: 6
+      use_cluster_weighting: true
+      params:
+        scheduler_groups: 25
+        num_clusters: 13
+        # Beamformer whose post-beamforming rate the handover FSM consults via the
+        # rate provider for connected pairs. One of: spc | pac | mf
+        rate_beamformer: spc
+        # Number of worker processes used by user_links_rrm to parallelise the per-satellite loop.
+        # 1 = sequential; -1 = use all physical cores. You can also set a diff. number
+        n_workers: -1
+    routing:
+      active_algorithm: disco_3t
+      params:
+        processing_time_per_node_s: 0.003
+
+  channel_model:
+    channel_scenario: sub_urban
+    propagation_model: nlos
+    force_nlos_for_all_users: false
+    atmospheric_temperature_K: 288.15
+    atmospheric_pressure_hPa: 1013.25
+    atmospheric_vapour_g_m3: 7.5
+    p: 0.01
+
+  service:
+    user_link: 
+      bandwidth_mhz: 400
+      rx_carrier_frequency_hz: 20000000000
+      tx_carrier_frequency_hz: 20000000000
+    feeder_link: 
+      bandwidth_mhz: 400
+      rx_carrier_frequency_hz: 20000000000
+      tx_carrier_frequency_hz: 20000000000
+
+  user_terminal:
+    type: vsat
+    antenna_diameter_m: 0.6
+    gain_dB: 39.7
+    noise_figure_dB: 1.2
+    noise_temperature_K: 150
+    shadowing_margin_dB: 0
+    carrier_frequency_hz: 20000000000
+
+  ground_station_terminal:
+    type: vsat
+    antenna_diameter_m: 0.6
+    gain_dB: 39.7
+    noise_figure_dB: 1.2
+    noise_temperature_K: 150
+    shadowing_margin_dB: 0
+    carrier_frequency_hz: 20000000000
+
+  satellite_payload:
+    carrier_frequency_hz: 20000000000
+    bandwidth_mhz: 400
+    eirp_density_dBW_per_mhz: 20
+    array_field_of_view_deg: 100
+    tx_antenna:
+      n_el_H: 16
+      n_el_V: 16
+      element_spacing_lambda_factor: 0.6
+      G_el_dB: 5
+      theta_3dB: 65
+      phi_3dB: 65
+      Am: 30
+      SLAv: 30

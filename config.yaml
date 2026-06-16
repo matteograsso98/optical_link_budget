@@ -1,0 +1,63 @@
+general:
+  simulation_name: fso_leo_dynamic_link_budget
+  simulation_duration: 100    # number of timesteps
+  simulation_timestep: 1      # seconds per timestep
+
+offline:
+  # ── Satellite orbit ──────────────────────────────────────────────────────────
+  constellation:
+    altitude_km: 550.0        # LEO satellite altitude above MSL
+
+  # ── User population ──────────────────────────────────────────────────────────
+  # Each user gets its own atmospheric profile in the LUT, so per-user altitude
+  # and station height are sampled at initialisation (not per timestep).
+  user_deployment:
+    total_users: 50
+    altitude_min_km: 0.0      # MSL altitude sampling range (uniform draw)
+    altitude_max_km: 1.0
+    station_height_m: 5.5     # height above local ground — scintillation model
+
+  # ── Atmospheric LUT precomputation ───────────────────────────────────────────
+  # The LUT is built once before the simulation loop and cached to disk.
+  # It is invalidated automatically when user altitudes change.
+  atmospheric_lut:
+    cache_file: data/lut_fso_spatial.npy
+    elevation_min_deg: 10.0
+    elevation_max_deg: 90.0
+    elevation_step_deg: 0.5
+
+online:
+  # ── Atmospheric channel model ─────────────────────────────────────────────────
+  channel_model:
+    active_model: mie_geom_scin   # mie_geom | mie_scin | mie_geom_scin
+
+  # ── Atmosphere (ITU-R P.1621-2 / P.1622-0) ───────────────────────────────────
+  atmosphere:
+    wavelength_um: 1.550          # C-band, 193.41 THz
+    troposphere_top_km: 20.0      # upper limit for geometric scattering path
+    turbulence_ceiling_m: 20000   # upper limit for scintillation integral
+    rms_wind_speed_m_s: 21.0      # corresponds to ground wind vg ≈ 2.3 m/s
+    ground_cn2_m_neg23: 1.7e-14   # ground-level Cn² structure parameter [m^{-2/3}]
+    cloud:
+      liquid_water_content_g_m3: 3.128e-4   # Kim model cloud/fog LWC
+      droplet_concentration_cm3: 0.5        # cloud droplet number concentration
+      kim_phi_coefficient: 1.6              # particle-size coefficient
+
+  # ── Ground station (receiver) ─────────────────────────────────────────────────
+  ground_station_terminal:
+    aperture_diameter_m: 0.080
+    optical_efficiency: 0.8
+    pointing_error_rad: 1.0e-6
+    noise_power_dBm: -100.0
+    target_rx_power_dBm: -32.5
+
+  # ── Satellite (transmitter) ───────────────────────────────────────────────────
+  satellite_terminal:
+    tx_power_W: 1.0
+    optical_efficiency: 0.8
+    beam_divergence_rad: 1.5e-5   # full transmit beam divergence angle
+    pointing_error_rad: 1.0e-6
+
+  # ── Link ──────────────────────────────────────────────────────────────────────
+  link:
+    bandwidth_hz: 10000000000     # 10 GHz

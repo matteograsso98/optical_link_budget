@@ -1,77 +1,56 @@
 """
 main_dynamic.py
 ===============
-Point d'entrée — simulation FSO LEO dynamique et tracé des 4 figures.
+Entry point — dynamic FSO LEO simulation and plots.
+All parameters are read from config.yaml.
 """
 
+from pathlib import Path
+
 import numpy as np
-from config import DEFAULT_ATM, DEFAULT_ORBIT, DEFAULT_TERMINAL
+
+from config import DEFAULT_SIM, DEFAULT_ATM, DEFAULT_ORBIT, DEFAULT_TERMINAL
 from optical_link_budget_paper.link.geometry import slant_distance_km
 from dynamic_link_budget.dynamic_link_budget import DynamicLinkBudget
 from dynamic_link_budget.plots import plot_snr_and_rate
 
-# ── Configuration ─────────────────────────────────────────────────────
+sim = DEFAULT_SIM
+atm = DEFAULT_ATM
+orb = DEFAULT_ORBIT
+trm = DEFAULT_TERMINAL
 
-cfg = {
-    # Optique FSO
-    "lam_um":       DEFAULT_ATM.lam_um,
-    "hE_km":        DEFAULT_ATM.hE_km,   # fallback global si LUT absente
-    "hS_km":        DEFAULT_ORBIT.hS_km,
-    "Dr_m":         DEFAULT_TERMINAL.Dr_m,
-    "Theta_T_rad":  DEFAULT_TERMINAL.Theta_T_rad,
-    "theta_T_rad":  DEFAULT_TERMINAL.theta_T_rad,
-    "theta_R_rad":  DEFAULT_TERMINAL.theta_R_rad,
-    "eta_T":        DEFAULT_TERMINAL.eta_T,
-    "eta_R":        DEFAULT_TERMINAL.eta_R,
-    "Pr_dBm":       DEFAULT_TERMINAL.Pr_dBm,
-    "P_tx":         DEFAULT_TERMINAL.P_tx, # Watt
-    "noise_dBm":    DEFAULT_TERMINAL.noise_dBm,  # Noise power (dBm) — convenience parameter for SNR calculations
-    "bandwidth_hz": DEFAULT_TERMINAL.bandwidth_hz, #4.4e12,
-    # Atmosphère FSO — paramètres globaux (Kim / ITU-R P.1622)
-    "LW":           DEFAULT_ATM.LW,
-    "N_droplets":   DEFAULT_ATM.N,
-    "hA_km":        DEFAULT_ATM.hA_km,
-    "phi":          DEFAULT_ATM.phi,
-    # Scintillation (ITU-R P.1621-2 / P.1622)
-    "Z_m":          DEFAULT_ATM.Z_m,
-    "vrms":         DEFAULT_ATM.vrms,
-    "C0":           DEFAULT_ATM.C0,
-    # Modèle atmosphérique : "mie_geom" | "mie_scin" | "mie_geom_scin"
-    "atm_model":    "mie_geom_scin",
-    # UPA
-    "N_x": DEFAULT_TERMINAL.N_x, 
-    "N_y": DEFAULT_TERMINAL.N_y,
-    "d_x": DEFAULT_TERMINAL.d_x, 
-    "d_y": DEFAULT_TERMINAL.d_y,
-    
-}
+# ── LUT cache path (relative to the package root) ─────────────────────────────
 
-# ── Utilisateurs — paramètres spatiaux ────────────────────────────────
-# Chaque utilisateur peut avoir une altitude sol et une hauteur de station
-# différentes, ce qui donne un profil atmosphérique propre dans la LUT.
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+LUT_PATH = DATA_DIR / sim.lut_cache_file.split("/")[-1]
 
-N_user = 50
+# ── Users — spatial parameters (sampled once, held fixed across timesteps) ────
 
-# hE_km : altitude MSL de chaque utilisateur (plaine → montagne)
-user_hE_km = np.random.uniform(0.0, 1.0, N_user)
+user_hE_km = np.random.uniform(sim.user_alt_min_km, sim.user_alt_max_km, sim.n_users)
+user_h0_m  = np.full(sim.n_users, sim.station_height_m)
 
-# h0_m : hauteur au-dessus du sol local (paramètre de scintillation)
-user_h0_m  = np.full(N_user, DEFAULT_ATM.h0_m)
+# ── Initialise and precompute atmospheric LUT ──────────────────────────────────
 
-# ── Initialisation ─────────────────────────────────────────────────────
+dlb = DynamicLinkBudget(atm, orb, trm)
 
-dlb = DynamicLinkBudget(cfg)
+elevation_grid = np.arange(
+    sim.elev_min_deg,
+    sim.elev_max_deg + sim.elev_step_deg,
+    sim.elev_step_deg,
+    dtype=np.float64,
+)
+
 dlb.precompute_lut(
     user_hE_km,
     user_h0_m,
-    lut_cache_path="lut_fso_spatial.npy",
+    elevation_grid_deg=elevation_grid,
+    lut_cache_path=LUT_PATH,
 )
 
-# ── Simulation passage LEO ─────────────────────────────────────────────
+# ── Simulate LEO pass ──────────────────────────────────────────────────────────
 
-N_ts = 100
-azimuths_users = np.random.uniform(0, 360, N_user)
-user_indices   = np.arange(N_user)
+azimuths_users = np.random.uniform(0, 360, sim.n_users)
+user_indices   = np.arange(sim.n_users)
 
 all_slant      = []
 all_SNR_ideal  = []
@@ -79,14 +58,13 @@ all_SNR_real   = []
 all_rate_ideal = []
 all_rate_real  = []
 
-for ts in range(N_ts):
-    # Élévation indépendante par utilisateur à chaque pas de temps,
-    # uniforme sur [10°, 85°] — reproduit la diversité géographique
-    # naturelle de channel.py sans mécanique orbitale explicite.
-    el_ts   = np.random.uniform(10, 85, N_user)
+for ts in range(sim.duration):
+    # Independent per-user elevation at each timestep, uniform on the LUT range,
+    # reproducing natural geographic diversity without explicit orbital mechanics.
+    el_ts   = np.random.uniform(sim.elev_min_deg, sim.elev_max_deg - 5, sim.n_users)
     slant_m = np.array([
-        slant_distance_km(el_ts[u], user_hE_km[u], cfg["hS_km"]) * 1e3
-        for u in range(N_user)
+        slant_distance_km(el_ts[u], user_hE_km[u], orb.hS_km) * 1e3
+        for u in range(sim.n_users)
     ])
 
     res = dlb.compute(ts, slant_m, azimuths_users, el_ts,
@@ -96,9 +74,9 @@ for ts in range(N_ts):
     all_SNR_ideal.append(res["SNR_dB"])
     all_SNR_real.append(res["SNR_real_dB"])
     all_rate_ideal.append(res["rate_ideal"] / 1e9)
-    all_rate_real.append(res["rate_real"]  / 1e9)
+    all_rate_real.append(res["rate_real"]   / 1e9)
 
-# ── Tracé des 4 figures via plots.py ──────────────────────────────────
+# ── Plot ───────────────────────────────────────────────────────────────────────
 
 plot_snr_and_rate(
     slant_km_all    = np.concatenate(all_slant),
@@ -106,6 +84,6 @@ plot_snr_and_rate(
     SNR_real_dB     = np.concatenate(all_SNR_real),
     rate_ideal_gbps = np.concatenate(all_rate_ideal),
     rate_real_gbps  = np.concatenate(all_rate_real),
-    atm_model       = cfg["atm_model"],
-    save_path       = "dynamic_link_budget/plots/dynamic_link_budget.png",
+    atm_model       = atm.atm_model,
+    save_path       = Path(__file__).parent / "plots" / "dynamic_link_budget.png",
 )

@@ -8,9 +8,9 @@ import numpy as np
 
 
 def _snr_linear(H_sys, P_tx):
-    # SNR_i = P_tx · ||h_i||²  (somme incohérente — beamforming MRT optimal)
-    return P_tx * np.sum(np.abs(H_sys) ** 2, axis=1)
-
+    # SNR_i =  ||P_tx · h_i||²  
+    return np.sum(np.abs(H_sys * P_tx)** 2, axis=1)
+    #return P_tx * np.sum(np.abs(H_sys )** 2, axis=1)
 
 def compute_snr_dB(H_sys, P_tx):
     """
