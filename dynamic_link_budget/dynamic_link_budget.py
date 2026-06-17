@@ -129,30 +129,12 @@ class DynamicLinkBudget:
         atm_model = atm.atm_model
         lam_um    = atm.lam_um
 
-        # Pre-compute per-user scintillation path integrals.
-        # The integral ∫Cn²(h)·h^{5/6}dh is independent of elevation, so we
-        # evaluate it once per user and apply the sin^{-11/6}(el) factor over
-        # the full elevation grid in the LUT loop below.
-        scin_coeff = scin_dBfact = None
-        scin_integrals = None
-
         if "scin" in atm_model:
             if user_h0_m is None:
                 raise ValueError(
                     f"user_h0_m is required for atm_model='{atm_model}'."
                 )
             user_h0_m = np.asarray(user_h0_m, dtype=np.float64)
-            k = 2.0 * np.pi / self.lam_m
-            scin_coeff  = 2.253 * k ** (7.0 / 6.0)
-            scin_dBfact = (10.0 / np.log(10.0)) ** 2
-
-            scin_integrals = np.empty(U, dtype=np.float64)
-            for u in range(U):
-                h = np.linspace(user_h0_m[u], atm.Z_m, 80_000)
-                integrand = scintillation.Cn2_profile(
-                    h, C0=atm.C0, vrms=atm.vrms
-                ) * h ** (5.0 / 6.0)
-                scin_integrals[u] = np.trapz(integrand, h)
 
         # Build LUT
         losses = np.zeros((U, G), dtype=np.float64)
@@ -171,11 +153,10 @@ class DynamicLinkBudget:
                 ])
 
             if "scin" in atm_model:
-                sin_el     = np.sin(np.radians(el))
-                sigma2_lnN = (scin_coeff
-                              * (1.0 / sin_el) ** (11.0 / 6.0)
-                              * scin_integrals)
-                losses[:, i] += np.sqrt(scin_dBfact * sigma2_lnN)
+                losses[:, i] += np.array([
+                    scintillation.sigma_dB(lam_um, el, user_h0_m[u], atm.Z_m, atm.vrms, atm.C0)
+                    for u in range(U)
+                ])
 
         self._att_lut_dB       = losses
         self._att_lut_elev_deg = elevation_grid_deg
