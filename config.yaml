@@ -8,6 +8,11 @@ offline:
   constellation:
     altitude_km: 550.0        # LEO satellite altitude above MSL
 
+  # ── Station de référence (scénario statique optical_link_budget_paper) ───────
+  # Altitude unique utilisée pour le bilan de liaison statique (Liang et al., Table 3).
+  reference_station:
+    altitude_km: 1.0          # altitude MSL de la station sol de référence [km]
+
   # ── User population ──────────────────────────────────────────────────────────
   # Each user gets its own atmospheric profile in the LUT, so per-user altitude
   # and station height are sampled at initialisation (not per timestep).

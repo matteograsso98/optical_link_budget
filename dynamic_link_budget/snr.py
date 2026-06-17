@@ -1,16 +1,21 @@
 """
 snr.py
 ======
-Calcul du SNR et du débit Shannon à partir de la matrice de canal H_sys.
+Calcul du SNR et du débit Shannon pour un lien FSO optique (IM/DD).
+
+Convention optique :
+    H_sys encodes l'amplitude du gain de canal (racine du rapport de puissances).
+    SNR = P_tx · ||h_i||²   où P_tx est une puissance [W].
+    C'est un rapport de puissances optiques : SNR = P_r / N₀.
 """
 
 import numpy as np
 
 
 def _snr_linear(H_sys, P_tx):
-    # SNR_i =  ||P_tx · h_i||²  
-    return np.sum(np.abs(H_sys * P_tx)** 2, axis=1)
-    #return P_tx * np.sum(np.abs(H_sys )** 2, axis=1)
+    # SNR_i = P_tx · ||h_i||²  (P_tx = puissance [W], H_sys = gain d'amplitude)
+    return P_tx * np.sum(np.abs(H_sys) ** 2, axis=1)
+
 
 def compute_snr_dB(H_sys, P_tx):
     """
@@ -20,8 +25,8 @@ def compute_snr_dB(H_sys, P_tx):
 
     Paramètres
     ----------
-    H_sys : array complexe (K, N) — matrice canal système (K users, N antennes)
-    P_tx  : float                 — puissance d'émission (W)
+    H_sys : array réel (K, 1) — gain d'amplitude du canal FSO (K users)
+    P_tx  : float             — puissance effective d'émission [W]
 
     Retourne
     --------

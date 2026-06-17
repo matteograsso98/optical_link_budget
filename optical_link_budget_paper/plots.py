@@ -26,8 +26,35 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
+from pathlib import Path
+from types import SimpleNamespace
+
+import yaml
+
 from optical_link_budget_paper.atmosphere import mie, scintillation
-from config import DEFAULT_ATM
+
+# Chargement des paramètres par défaut depuis config.yaml (utilisé quand plots.py
+# est exécuté directement via __main__ sans qu'un atm soit passé en argument).
+def _load_default_atm():
+    config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f)
+    atm_raw = cfg["online"]["atmosphere"]
+    cloud   = atm_raw["cloud"]
+    return SimpleNamespace(
+        lam_um = atm_raw["wavelength_um"],
+        hE_km  = cfg["offline"]["reference_station"]["altitude_km"],
+        h0_m   = cfg["offline"]["user_deployment"]["station_height_m"],
+        hA_km  = atm_raw["troposphere_top_km"],
+        Z_m    = float(atm_raw["turbulence_ceiling_m"]),
+        vrms   = atm_raw["rms_wind_speed_m_s"],
+        C0     = atm_raw["ground_cn2_m_neg23"],
+        LW     = cloud["liquid_water_content_g_m3"],
+        N      = cloud["droplet_concentration_cm3"],
+        phi    = cloud["kim_phi_coefficient"],
+    )
+
+_DEFAULT_ATM = _load_default_atm()
 
 
 # ── Colour palette ────────────────────────────────────────────────────────────
@@ -66,7 +93,7 @@ def _add_wavelength_axis(ax: plt.Axes) -> plt.Axes:
 
 
 def plot_atmospheric_impairments(
-    atm=DEFAULT_ATM,
+    atm=_DEFAULT_ATM,
     n_freq: int = 600,
     output_path: str | Path | None = None,
     show: bool = False,

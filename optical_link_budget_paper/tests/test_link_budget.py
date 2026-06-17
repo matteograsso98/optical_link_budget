@@ -33,7 +33,6 @@ import numpy as np
 
 from optical_link_budget_paper.atmosphere import mie, scintillation, geometric
 from optical_link_budget_paper.link import geometry, budget
-from config import AtmosphereConfig, OrbitConfig, TerminalConfig
 
 
 def approx(value, abs_tol):

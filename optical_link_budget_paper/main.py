@@ -4,23 +4,63 @@ main.py — FSO link budget scenarios
 Runs the link budget for a range of elevation angles and prints
 the results tables (equivalent to the original flat scripts).
 
+All parameters are read directly from config.yaml (no config.py).
+
 Run from the repo root:
-    python main.py
+    python optical_link_budget_paper/main.py
 """
 
-import numpy as np
+from pathlib import Path
+from types import SimpleNamespace
 
-from config import DEFAULT_ATM, DEFAULT_ORBIT, DEFAULT_TERMINAL
+import numpy as np
+import yaml
+
 from optical_link_budget_paper.atmosphere import mie, scintillation, geometric
 from optical_link_budget_paper.link import geometry, budget
+
+# ── Chargement de config.yaml ──────────────────────────────────────────────────
+
+_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+
+with open(_CONFIG_PATH) as _f:
+    _cfg = yaml.safe_load(_f)
+
+_atm_raw = _cfg["online"]["atmosphere"]
+_cloud   = _atm_raw["cloud"]
+_rx      = _cfg["online"]["ground_station_terminal"]
+_tx      = _cfg["online"]["satellite_terminal"]
+
+atm = SimpleNamespace(
+    lam_um  = _atm_raw["wavelength_um"],
+    hE_km   = _cfg["offline"]["reference_station"]["altitude_km"],
+    h0_m    = _cfg["offline"]["user_deployment"]["station_height_m"],
+    hA_km   = _atm_raw["troposphere_top_km"],
+    Z_m     = float(_atm_raw["turbulence_ceiling_m"]),
+    vrms    = _atm_raw["rms_wind_speed_m_s"],
+    C0      = _atm_raw["ground_cn2_m_neg23"],
+    LW      = _cloud["liquid_water_content_g_m3"],
+    N       = _cloud["droplet_concentration_cm3"],
+    phi     = _cloud["kim_phi_coefficient"],
+)
+
+orb = SimpleNamespace(
+    hS_km = _cfg["offline"]["constellation"]["altitude_km"],
+)
+
+trm = SimpleNamespace(
+    Theta_T_rad = _tx["beam_divergence_rad"],
+    theta_T_rad = _tx["pointing_error_rad"],
+    eta_T       = _tx["optical_efficiency"],
+    Dr_m        = _rx["aperture_diameter_m"],
+    theta_R_rad = _rx["pointing_error_rad"],
+    eta_R       = _rx["optical_efficiency"],
+    Pr_dBm      = _rx["target_rx_power_dBm"],
+)
 
 # ── Elevation sweep ───────────────────────────────────────────────────────────
 
 ELEVATIONS_DEG = np.linspace(10, 90, 9)   # 10° → 90° in 9 steps
-
-atm = DEFAULT_ATM
-orb = DEFAULT_ORBIT
-trm = DEFAULT_TERMINAL
 
 
 # ── Derived terminal parameters ───────────────────────────────────────────────
