@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Run `pytest` from the repo root; the package imports (channel_model.*) then
+# resolve without setting PYTHONPATH manually.
+pythonpath = ["."]
+testpaths = ["tests"]

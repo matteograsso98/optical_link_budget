@@ -7,13 +7,17 @@ except ImportError:
     print("Warning: 'itur' library not found. Please install it using 'pip install itur'.")
     itur = None
 
+# Large-scale-fading tables for  RFChannel is kept here as a reference RF counterpart to
+# OpticalChannel, and only needs this dependency when actually instantiated.
 from load_large_scale_model import load_large_scale_model
+from channel_model.base import BaseChannel
 
-class Channel:
+class RFChannel(BaseChannel):
     def __init__(self, channel_model_config: dict) -> None:
         """
         Initializes the channel model parameters and loads the large-scale fading tables.
         """
+        super().__init__()
         self.channel_scenario = channel_model_config.get("channel_scenario", "urban")
         self.propagation_model = channel_model_config.get("propagation_model", "los").lower()
         self.force_nlos_for_all_users = channel_model_config.get("force_nlos_for_all_users", False)
@@ -25,8 +29,7 @@ class Channel:
         # Load large scale model data (LOS probabilities, sigma, clutter) once at initialization
         self.lsm = load_large_scale_model(self.channel_scenario)
 
-        # Per-UT atmospheric-attenuation LUT (populated lazily by
-        # `precompute_attenuation_lut`). When present, `compute()` reads
+        # Per-UT atmospheric-attenuation LUT. When present, `compute()` reads
         # ITU-R P.618 total attenuation [dB] from the LUT instead of calling
         # `itur.atmospheric_attenuation_slant_path` on every call.
         self._att_lut_dB = None         # (U, N_grid) float64 [dB]
@@ -140,19 +143,6 @@ class Channel:
             np.save(lut_cache_path, att_dB)
             np.save(str(lut_cache_path) + ".elev.npy", elevation_grid_deg)
 
-    def _lookup_attenuation_dB(self, user_indices, elevation_deg):
-        """Vectorised per-pair Att [dB] via 1-D linear interpolation in elevation."""
-        grid   = self._att_lut_elev_deg
-        elev   = np.clip(np.asarray(elevation_deg), grid[0], grid[-1])
-        idx_f  = (elev - grid[0]) / (grid[1] - grid[0])
-        idx_lo = np.floor(idx_f).astype(np.int64)
-        idx_hi = np.minimum(idx_lo + 1, grid.size - 1)
-        frac   = idx_f - idx_lo
-        ui     = np.asarray(user_indices, dtype=np.int64)
-        ulb    = self._att_lut_dB[ui, idx_lo]
-        uhb    = self._att_lut_dB[ui, idx_hi]
-        return (1.0 - frac) * ulb + frac * uhb
-
     def compute(self, ts_index: int, tx, rx, user_terminals_geodetic, slant_range, uv, thetaphi, elevation, user_indices=None):
         """
         Calculates both the ideal and realistic complex channel matrices for the current timestep.
@@ -183,7 +173,7 @@ class Channel:
         # Mask: bad rows in the final h_ideal/h_realistic are zeroed at the
         # end of compute(), so |h|=0 → rate = bw*log2(1+0) = 0 → fails the
         # `rate >= Rmin` gate → user gets handed over off the stale sat.
-        slant_ok   = np.isfinite(slant_range) & (slant_range > 0)
+        slant_ok   = self._visibility_mask(slant_range)
         safe_slant = np.where(slant_ok, slant_range, np.nan)
         with np.errstate(divide="ignore", invalid="ignore"):
             phase_path_loss = np.exp(-1j * safe_slant * 2 * np.pi / lambda_m) / safe_slant
@@ -261,8 +251,8 @@ class Channel:
         total_loss_dB = large_scale_loss_dB + p618_total_loss_dB
         
         # Convert total dB loss to linear scaling factor
-        loss_scaling = 1.0 / np.sqrt(10 ** (0.1 * total_loss_dB))
-        
+        loss_scaling = self._amplitude_scaling(total_loss_dB)
+
         # Apply loss scaling across the ideal channel
         h_realistic = h_ideal * loss_scaling[:, None]
 

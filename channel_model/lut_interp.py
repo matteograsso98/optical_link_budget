@@ -3,7 +3,7 @@ lut_interp.py
 =============
 Shared 1-D linear interpolation helper for elevation-indexed LUT lookups.
 
-Used by both Channel (RF, ITU-R P.618) and DynamicLinkBudget (FSO, ITU-R P.1622).
+Used by both RFChannel (ITU-R P.618) and OpticalChannel (FSO, ITU-R P.1622).
 """
 
 import numpy as np

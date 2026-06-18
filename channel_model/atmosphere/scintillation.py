@@ -8,7 +8,7 @@ Reference: ITU-R P.1622-0 (scintillation), ITU-R P.1621-2 §5.1.1 (Cn²).
 
 import numpy as np
 
-from optical_link_budget_paper.atmosphere.turbulence import Cn2_profile
+from channel_model.atmosphere.turbulence import Cn2_profile
 
 
 def sigma_dB(
@@ -45,7 +45,7 @@ def sigma_dB(
 
     h_arr = np.linspace(h0_m, Z_m, n_points)
     integrand = Cn2_profile(h_arr, C0=C0, vrms=vrms) * h_arr ** (5.0 / 6.0)
-    integral = np.trapz(integrand, h_arr)
+    integral = np.trapezoid(integrand, h_arr)
 
     sigma2_lnN = (2.253 * k ** (7.0 / 6.0)
                   * (1.0 / np.sin(np.radians(el_deg))) ** (11.0 / 6.0)

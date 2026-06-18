@@ -16,8 +16,8 @@ from types import SimpleNamespace
 import numpy as np
 import yaml
 
-from optical_link_budget_paper.atmosphere import mie, scintillation, geometric
-from optical_link_budget_paper.link import geometry, budget
+from channel_model.atmosphere import mie, scintillation, geometric
+from channel_model.link import geometry, budget
 
 # ── Chargement de config.yaml ──────────────────────────────────────────────────
 

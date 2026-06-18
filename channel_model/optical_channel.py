@@ -1,24 +1,32 @@
 """
-DynamicLinkBudget — bilan de liaison FSO LEO dynamique  (V2)
-=============================================================
-Modèle de canal optique FSO pour un passage de satellite LEO.
+OpticalChannel — dynamic FSO LEO channel model
+==============================================
+Free-space optical (FSO) channel for a LEO satellite pass.
 
-Convention physique (optique IM/DD) :
-  On travaille avec des puissances optiques [W], pas des amplitudes complexes.
-  Le canal est réel et positif : gain d'amplitude h = sqrt(G_T · G_R) · λ/(4πd).
-  SNR = P_eff · |h|² / N₀  =  P_r / N₀   (rapport de puissances optiques).
+Physical convention (optical IM/DD):
+  We work with optical powers [W], not complex amplitudes. The channel is real
+  and positive — there is no carrier phase and no array radiation pattern (a
+  single narrow-beam aperture, so the channel is a 1×U vector, not an
+  array-element matrix). The amplitude (field) gain is
 
-  xi = sqrt(G_T · G_R / N₀) · λ/(4π)  absorbé dès l'initialisation,
-  de sorte que  H_ideal[u] = xi / d[u]  et  |H_ideal|² = G_T·G_R·(λ/4πd)²/N₀.
+      H = sqrt(G_T · G_R) · λ / (4π d)         (physical, noise NOT folded in)
 
-Trois modèles d'atmosphère (atm.atm_model) :
-  "mie_geom"      — Mie (ITU-R P.1622) + diffusion géométrique (Kim/Liang)
-  "mie_scin"      — Mie + scintillation d'amplitude (ITU-R P.1622)
-  "mie_geom_scin" — Mie + géométrique + scintillation (modèle le plus complet)
+  so |H|² = G_T·G_R·(λ/4πd)² is the link power gain, the received signal power
+  is P_r = P_eff·|H|², and the SNR is formed explicitly against the receiver
+  noise floor N0 in snr.py:  SNR = P_eff·|H|² / N0.
 
-Paramètres de configuration :
-  Chargés directement depuis config.yaml via yaml.safe_load() dans main_dynamic.py.
-  Les objets atm / orb / trm sont des SimpleNamespace ; aucune dépendance à config.py.
+This is the optical counterpart of the RF ``RFChannel`` (rf_channel.py): same
+precompute_lut → compute lifecycle, but with the radiation pattern and phase
+term removed and ITU-R P.618 replaced by the optical ITU-R P.1622 atmosphere.
+
+Three atmosphere models (atm.atm_model):
+  "mie_geom"      — Mie (ITU-R P.1622) + geometric scattering (Kim/Liang)
+  "mie_scin"      — Mie + amplitude scintillation (ITU-R P.1622)
+  "mie_geom_scin" — Mie + geometric + scintillation (most complete)
+
+Configuration parameters:
+  Loaded directly from config.yaml via yaml.safe_load() in main_dynamic.py.
+  The atm / orb / trm objects are SimpleNamespaces; no dependency on config.py.
 """
 
 from __future__ import annotations
@@ -27,42 +35,50 @@ import os
 
 import numpy as np
 
-from optical_link_budget_paper.atmosphere import mie, geometric, scintillation
-from optical_link_budget_paper.link import budget
-from channel_model.lut_interp import lookup_lut_dB
-from dynamic_link_budget.snr import compute_snr_dB, compute_shannon_rate
+from channel_model.atmosphere import mie, geometric, scintillation
+from channel_model.link import budget
+from channel_model.base import BaseChannel
+from channel_model.snr import compute_snr_dB, compute_shannon_rate
 
 
-class DynamicLinkBudget:
+class OpticalChannel(BaseChannel):
     """
-    Bilan de liaison FSO dynamique pour un passage de satellite LEO.
+    Dynamic FSO link channel for a LEO satellite pass.
 
-    Paramètres
+    Parameters
     ----------
-    atm : SimpleNamespace  (champs : atm_model, lam_um, hA_km, Z_m, vrms, C0, LW, N, phi)
-    orb : SimpleNamespace  (champs : hS_km)
-    trm : SimpleNamespace  (champs : Dr_m, eta_R, theta_R_rad, noise_dBm,
-                                     P_tx, eta_T, Theta_T_rad, theta_T_rad, bandwidth_hz)
+    atm : SimpleNamespace  (fields: atm_model, lam_um, hA_km, Z_m, vrms, C0, LW, N, phi)
+    orb : SimpleNamespace  (fields: hS_km)
+    trm : SimpleNamespace  (fields: Dr_m, eta_R, theta_R_rad,
+                                    noise_dBm_night, noise_dBm_day, noise_condition,
+                                    P_tx, eta_T, Theta_T_rad, theta_T_rad, bandwidth_hz)
 
-    Tous ces objets sont créés dans main_dynamic.py à partir de config.yaml.
+    All of these are built in main_dynamic.py from config.yaml.
 
-    Utilisation
-    -----------
-    1. Instancier avec les namespaces de configuration.
-    2. Appeler ``precompute_lut(user_hE_km, ...)`` une fois avant la boucle
-       de simulation pour construire la LUT atmosphérique (U × G).
-    3. Appeler ``compute(ts_index, slant_range_m, el_deg)`` à chaque
-       pas de temps pour obtenir les SNR et débits Shannon.
+    Usage
+    -----
+    1. Instantiate with the configuration namespaces.
+    2. Call ``precompute_lut(user_hE_km, ...)`` once before the simulation
+       loop to build the (U × G) atmospheric LUT.
+    3. Call ``compute(ts_index, slant_range_m, az_deg, el_deg)`` each timestep
+       to get the channel vectors, SNRs, and Shannon rates.
     """
 
     def __init__(self, atm, orb, trm) -> None:
+        super().__init__()
         self.atm = atm
         self.orb = orb
         self.trm = trm
 
         self.lam_m   = atm.lam_um * 1e-6
         self.G_R     = budget.receive_gain(trm.Dr_m, atm.lam_um)
-        self.noise_W = 10 ** (trm.noise_dBm / 10) * 1e-3
+
+        # Receiver noise floor N0 [W] — background-limited, day/night dependent.
+        # SNR is computed against this floor (not folded into the channel).
+        self.noise_W_night = 10 ** (trm.noise_dBm_night / 10) * 1e-3
+        self.noise_W_day   = 10 ** (trm.noise_dBm_day   / 10) * 1e-3
+        self.noise_W = (self.noise_W_day if trm.noise_condition == "day"
+                        else self.noise_W_night)
 
         G_T_lin = budget.transmit_gain(trm.Theta_T_rad)
         L_T_dB  = budget.pointing_loss_dB(G_T_lin, trm.theta_T_rad)
@@ -74,14 +90,10 @@ class DynamicLinkBudget:
                       * trm.eta_T * 10 ** (L_T_dB / 10)
                       * trm.eta_R * 10 ** (L_R_dB / 10))
 
-        # Amplitude channel scaling constant (noise-normalised, G_T and G_R both included).
-        # |H_ideal[u]|² = xi² / d[u]²  =>  SNR = P_eff · xi²/d² = P_eff·G_T·G_R·(λ/4πd)²/N₀
-        self.xi = (np.sqrt(self.G_T * self.G_R / self.noise_W)
-                   / (4.0 * np.pi / self.lam_m))
-
-        # Atmospheric LUT — populated by precompute_lut()
-        self._att_lut_dB       = None   # (U, G) float64 [dB]
-        self._att_lut_elev_deg = None   # (G,)   float64 [deg]
+        # Physical channel amplitude scaling (field gain, noise NOT folded in).
+        # H_ideal[u] = xi / d[u]  =>  |H_ideal[u]|² = G_T·G_R·(λ/4πd)²  (power gain).
+        # SNR is then P_eff·|H|²/N0, computed explicitly in snr.py.
+        self.xi = np.sqrt(self.G_T * self.G_R) * self.lam_m / (4.0 * np.pi)
 
     # ── Atmospheric LUT (ITU-R P.1622) ───────────────────────────────────────
 
@@ -94,7 +106,8 @@ class DynamicLinkBudget:
     ) -> None:
         """
         Build the (U × G) atmospheric loss LUT for every user across an
-        elevation grid. Mirrors channel.Channel.precompute_attenuation_lut().
+        elevation grid. Optical counterpart of
+        RFChannel.precompute_attenuation_lut().
 
         Parameters
         ----------
@@ -172,16 +185,21 @@ class DynamicLinkBudget:
         self,
         ts_index: int,
         slant_range_m,
+        az_deg,
         el_deg,
         user_indices=None,
     ) -> dict:
         """
-        Compute FSO channel matrices, SNR, and Shannon capacity.
+        Compute the FSO channel vectors, SNR, and Shannon capacity.
+
+        Mirrors RFChannel.compute() for API consistency.
 
         Parameters
         ----------
         ts_index      : timestep index (forwarded to the output dict).
         slant_range_m : (U,) slant range from ground station to satellite [m].
+        az_deg        : (U,) azimuth angle [deg] — not used in FSO (no spatial
+                        multiplexing), kept for API symmetry with RFChannel.
         el_deg        : (U,) elevation angle [deg].
         user_indices  : (U,) int row indices into the LUT.
                         Defaults to 0, 1, …, U-1.
@@ -190,15 +208,15 @@ class DynamicLinkBudget:
         -------
         dict with keys:
             ts_index   — echo of ts_index.
-            H_ideal    — (U, 1) float64, gain d'amplitude espace libre [m⁻¹·W^{-1/2}].
-            H_sys      — (U, 1) float64, gain d'amplitude avec pertes atmosphériques.
-            FSPL_dB    — (U,)  perte d'espace libre [dB].
-            A_atm_dB   — (U,)  atténuation atmosphérique totale [dB].
-            SNR_dB     — (U,)  SNR idéal [dB].
-            SNR_real_dB— (U,)  SNR réaliste avec pertes atmosphériques [dB].
-            rate_ideal — (U,)  capacité de Shannon, canal idéal [bps].
-            rate_real  — (U,)  capacité de Shannon, canal réaliste [bps].
-            slant_m    — (U,)  distance oblique [m].
+            H_ideal    — (U, 1) float64, physical free-space amplitude gain (field gain).
+            H_sys      — (U, 1) float64, amplitude gain incl. atmospheric losses.
+            FSPL_dB    — (U,)  free-space path loss [dB].
+            A_atm_dB   — (U,)  total atmospheric attenuation [dB].
+            SNR_dB     — (U,)  ideal SNR [dB].
+            SNR_real_dB— (U,)  realistic SNR with atmospheric losses [dB].
+            rate_ideal — (U,)  Shannon capacity, ideal channel [bps].
+            rate_real  — (U,)  Shannon capacity, realistic channel [bps].
+            slant_m    — (U,)  slant range [m].
         """
         lam = self.lam_m
         el  = np.asarray(el_deg,        dtype=np.float64)
@@ -208,28 +226,26 @@ class DynamicLinkBudget:
         if user_indices is None:
             user_indices = np.arange(U, dtype=np.int64)
 
-        # ── Gain d'amplitude FSO idéal ───────────────────────────────────────
-        # En optique IM/DD le canal est réel et positif (pas de phase porteuse).
-        # H_ideal[u] = xi / d[u],  avec xi = sqrt(G_T·G_R/N₀)·λ/(4π).
-        # Ainsi  SNR_ideal = P_eff · H_ideal² = P_eff·G_T·G_R·(λ/4πd)²/N₀ = P_r/N₀.
-        slant_ok = np.isfinite(d) & (d > 0)
+        # ── Ideal FSO amplitude gain ─────────────────────────────────────────
+        # In optical IM/DD the channel is real and positive (no carrier phase).
+        # H_ideal[u] = xi / d[u],  with xi = sqrt(G_T·G_R)·λ/(4π)  (physical
+        # field gain; noise is NOT folded in). The received signal power is
+        # P_r = P_eff·|H|², and SNR = P_r / N0 is formed in snr.py.
+        slant_ok = self._visibility_mask(d)
         safe_d   = np.where(slant_ok, d, np.nan)
         with np.errstate(divide="ignore", invalid="ignore"):
-            H_ideal = (self.xi / safe_d)[:, None]            # (U, 1) réel
+            H_ideal = (self.xi / safe_d)[:, None]            # (U, 1) real
 
-        # ── Pertes atmosphériques FSO (ITU-R P.1622) ────────────────────────
+        # ── FSO atmospheric losses (ITU-R P.1622) ────────────────────────────
         if self._att_lut_dB is None:
             raise RuntimeError(
-                "La LUT atmosphérique n'a pas été précalculée. "
-                "Appeler precompute_lut() avant compute()."
+                "Atmospheric LUT has not been precomputed. "
+                "Call precompute_lut() before compute()."
             )
-        fso_loss_dB = lookup_lut_dB(
-            self._att_lut_dB, self._att_lut_elev_deg, user_indices, el
-        )
+        fso_loss_dB = self._lookup_attenuation_dB(user_indices, el)
 
-        # ── Realistic channel matrix ─────────────────────────────────────────
-        loss_scaling = 1.0 / np.sqrt(10 ** (0.1 * fso_loss_dB))
-        H_sys = H_ideal * loss_scaling[:, None]               # (U, 1)
+        # ── Realistic channel vector ─────────────────────────────────────────
+        H_sys = H_ideal * self._amplitude_scaling(fso_loss_dB)[:, None]  # (U, 1)
 
         # Zero out non-visible links so downstream rate = 0
         bad = ~slant_ok
@@ -249,9 +265,9 @@ class DynamicLinkBudget:
             "H_sys":        H_sys,
             "FSPL_dB":      FSPL_dB,
             "A_atm_dB":     fso_loss_dB,
-            "SNR_dB":       compute_snr_dB(H_ideal, self.P_eff),
-            "SNR_real_dB":  compute_snr_dB(H_sys,   self.P_eff),
-            "rate_ideal":   compute_shannon_rate(H_ideal, B, self.P_eff),
-            "rate_real":    compute_shannon_rate(H_sys,   B, self.P_eff),
+            "SNR_dB":       compute_snr_dB(H_ideal, self.P_eff, self.noise_W),
+            "SNR_real_dB":  compute_snr_dB(H_sys,   self.P_eff, self.noise_W),
+            "rate_ideal":   compute_shannon_rate(H_ideal, B, self.P_eff, self.noise_W),
+            "rate_real":    compute_shannon_rate(H_sys,   B, self.P_eff, self.noise_W),
             "slant_m":      d,
         }

@@ -11,8 +11,8 @@ from types import SimpleNamespace
 import numpy as np
 import yaml
 
-from optical_link_budget_paper.link.geometry import slant_distance_km
-from dynamic_link_budget.dynamic_link_budget import DynamicLinkBudget
+from channel_model.link.geometry import slant_distance_km
+from channel_model import OpticalChannel
 from dynamic_link_budget.plots import plot_snr_and_rate
 
 # ── Chargement de config.yaml ──────────────────────────────────────────────────
@@ -70,11 +70,13 @@ orb = SimpleNamespace(
 
 trm = SimpleNamespace(
     # Récepteur (station sol)
-    Dr_m        = _rx["aperture_diameter_m"],
-    eta_R       = _rx["optical_efficiency"],
-    theta_R_rad = _rx["pointing_error_rad"],
-    noise_dBm   = _rx["noise_power_dBm"],
-    Pr_dBm      = _rx["target_rx_power_dBm"],
+    Dr_m            = _rx["aperture_diameter_m"],
+    eta_R           = _rx["optical_efficiency"],
+    theta_R_rad     = _rx["pointing_error_rad"],
+    noise_dBm_night = _rx["noise_power_dBm"]["night"],
+    noise_dBm_day   = _rx["noise_power_dBm"]["day"],
+    noise_condition = _online["link"]["noise_condition"],
+    Pr_dBm          = _rx["target_rx_power_dBm"],
     # Émetteur (satellite)
     P_tx        = _tx["tx_power_W"],
     eta_T       = _tx["optical_efficiency"],
@@ -96,7 +98,7 @@ user_h0_m  = np.full(sim.n_users, sim.station_height_m)
 
 # ── Initialisation et précalcul de la LUT atmosphérique ───────────────────────
 
-dlb = DynamicLinkBudget(atm, orb, trm)
+dlb = OpticalChannel(atm, orb, trm)
 
 elevation_grid = np.arange(
     sim.elev_min_deg,

@@ -31,7 +31,7 @@ from types import SimpleNamespace
 
 import yaml
 
-from optical_link_budget_paper.atmosphere import mie, scintillation
+from channel_model.atmosphere import mie, scintillation
 
 # Chargement des paramètres par défaut depuis config.yaml (utilisé quand plots.py
 # est exécuté directement via __main__ sans qu'un atm soit passé en argument).

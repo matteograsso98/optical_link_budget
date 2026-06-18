@@ -53,7 +53,12 @@ online:
     aperture_diameter_m: 0.080
     optical_efficiency: 0.8
     pointing_error_rad: 1.0e-6
-    noise_power_dBm: -100.0
+    # Receiver noise floor [dBm], referred to the receiver input. Background-
+    # limited optical detection: low at night, high under daytime solar
+    # background. SNR = P_r[dBm] - noise_power_dBm.
+    noise_power_dBm:
+      night: -58.9      # best case  (low sky background)
+      day: -33.0        # worst case (high solar background)
     target_rx_power_dBm: -32.5
 
   # ── Satellite (transmitter) ───────────────────────────────────────────────────
@@ -66,3 +71,4 @@ online:
   # ── Link ──────────────────────────────────────────────────────────────────────
   link:
     bandwidth_hz: 10000000000     # 10 GHz
+    noise_condition: night        # night (best) | day (worst) — selects noise floor
