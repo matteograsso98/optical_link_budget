@@ -185,8 +185,8 @@ class OpticalChannel(BaseChannel):
         self,
         ts_index: int,
         slant_range_m,
-        az_deg,
         el_deg,
+        az_deg=None,
         user_indices=None,
     ) -> dict:
         """
