@@ -1,17 +1,18 @@
 """
-main.py — FSO link budget scenarios
-=====================================
-Runs the link budget for a range of elevation angles and prints
-the results tables (equivalent to the original flat scripts).
-
-All parameters are read directly from config.yaml (no config.py).
+paper_tables.py — FSO link budget paper reproduction
+=====================================================
+Prints the static link budget tables (Liang et al., arXiv:2204.13177v1).
+Equivalent to running the original optical_link_budget_paper/main.py.
 
 Run from the repo root:
-    python optical_link_budget_paper/main.py
+    python scripts/paper_tables.py
 """
 
+import sys
 from pathlib import Path
 from types import SimpleNamespace
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import yaml
@@ -19,7 +20,7 @@ import yaml
 from channel_model.atmosphere import mie, scintillation, geometric
 from channel_model.link import geometry, budget
 
-# ── Chargement de config.yaml ──────────────────────────────────────────────────
+# ── Config ────────────────────────────────────────────────────────────────────
 
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
@@ -60,8 +61,7 @@ trm = SimpleNamespace(
 
 # ── Elevation sweep ───────────────────────────────────────────────────────────
 
-ELEVATIONS_DEG = np.linspace(10, 90, 9)   # 10° → 90° in 9 steps
-
+ELEVATIONS_DEG = np.linspace(10, 90, 9)
 
 # ── Derived terminal parameters ───────────────────────────────────────────────
 
@@ -79,7 +79,6 @@ print(f"L_R = {L_R:.4f} dB")
 # ── Per-elevation quantities ──────────────────────────────────────────────────
 
 def compute_row(el: float) -> dict:
-    """Compute all link budget quantities for a single elevation angle."""
     A_mie  = mie.attenuation_dB(atm.lam_um, atm.hE_km, el)
     A_scin = scintillation.sigma_dB(atm.lam_um, el, atm.h0_m, atm.Z_m, atm.vrms, atm.C0)
     A_geom = geometric.attenuation_dB(el, atm.LW, atm.N, atm.lam_um, atm.hA_km, atm.hE_km, atm.phi)
@@ -109,21 +108,20 @@ def compute_row(el: float) -> dict:
     )
 
     return {
-        "el":        el,
-        "d_GS":      d_GS,
-        "FSPL":      FSPL,
-        "A_mie":     A_mie,
-        "A_scin":    A_scin,
-        "A_geom":    A_geom,
+        "el":         el,
+        "d_GS":       d_GS,
+        "FSPL":       FSPL,
+        "A_mie":      A_mie,
+        "A_scin":     A_scin,
+        "A_geom":     A_geom,
         "A_tot_scin": A_mie + A_scin,
         "A_tot_geom": A_mie + A_geom,
-        "P_T_scin":  P_T_scin,
-        "P_T_geom":  P_T_geom,
+        "P_T_scin":   P_T_scin,
+        "P_T_geom":   P_T_geom,
     }
 
 
 rows = [compute_row(el) for el in ELEVATIONS_DEG]
-
 
 # ── Table 1: Mie + Scintillation ─────────────────────────────────────────────
 
@@ -135,7 +133,6 @@ print("-" * 75)
 for r in rows:
     print(f"{r['el']:>9.0f} | {r['d_GS']:>9.2f} | {r['FSPL']:>10.4f} | "
           f"{r['A_mie']:>9.4f} | {r['A_scin']:>10.4f} | {r['A_tot_scin']:>10.4f}")
-
 
 # ── Table 2: Mie + Geometric scattering + P_T ────────────────────────────────
 
@@ -149,7 +146,3 @@ for r in rows:
     print(f"{r['el']:>9.0f} | {r['d_GS']:>9.2f} | {r['FSPL']:>10.4f} | "
           f"{r['A_mie']:>9.4f} | {r['A_geom']:>10.4f} | {r['A_tot_geom']:>10.4f} | "
           f"{r['P_T_geom']:>10.4f}")
-
-# ── Plots ─────────────────────────────────────────────────────────────────────
-from optical_link_budget_paper.plots import plot_atmospheric_impairments
-plot_atmospheric_impairments(atm=atm)

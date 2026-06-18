@@ -7,9 +7,10 @@ except ImportError:
     print("Warning: 'itur' library not found. Please install it using 'pip install itur'.")
     itur = None
 
-# Large-scale-fading tables for  RFChannel is kept here as a reference RF counterpart to
-# OpticalChannel, and only needs this dependency when actually instantiated.
-from load_large_scale_model import load_large_scale_model
+try:
+    from load_large_scale_model import load_large_scale_model
+except ImportError:
+    load_large_scale_model = None
 from channel_model.base import BaseChannel
 
 class RFChannel(BaseChannel):

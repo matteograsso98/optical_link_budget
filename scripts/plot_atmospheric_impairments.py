@@ -1,40 +1,36 @@
 """
-fso_channel.plots
-=================
-Atmospheric impairment plots vs. frequency / wavelength.
+plot_atmospheric_impairments.py
+================================
+Three-panel atmospheric impairment figure (150–375 THz).
 
-Reproduces the three-panel figure from the original P1622_plot.py:
+Reproduces the figure from the original P1622_plot.py:
   - Panel 1: Mie scattering attenuation A_S
   - Panel 2: Scintillation fade depth σ_dBN (1σ and 3σ)
   - Panel 3: Total attenuation A_S + σ_dBN
 
-All plots share the same 150–375 THz x-axis with a secondary
-wavelength axis on top, and mark the C-band target at 193.41 THz.
-
-Usage
------
-    python -m fso_channel.plots              # saves PNG next to this file
-    python -m fso_channel.plots --show       # also opens interactive window
+Run from the repo root:
+    python scripts/plot_atmospheric_impairments.py
+    python scripts/plot_atmospheric_impairments.py --show
+    python scripts/plot_atmospheric_impairments.py --out path/to/out.png
 """
 
 import argparse
+import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-
-from pathlib import Path
-from types import SimpleNamespace
-
 import yaml
 
 from channel_model.atmosphere import mie, scintillation
 
-# Chargement des paramètres par défaut depuis config.yaml (utilisé quand plots.py
-# est exécuté directement via __main__ sans qu'un atm soit passé en argument).
+
 def _load_default_atm():
     config_path = Path(__file__).resolve().parent.parent / "config.yaml"
     with open(config_path) as f:
@@ -58,13 +54,13 @@ _DEFAULT_ATM = _load_default_atm()
 
 
 # ── Colour palette ────────────────────────────────────────────────────────────
-C_MIE    = "#d62728"   # red
-C_SC1    = "#1f77b4"   # blue   (1σ)
-C_SC3    = "#ff7f0e"   # orange (3σ)
-C_VLINE  = "#9467bd"   # purple (target frequency marker)
-C_TOT    = "#2ca02c"   # green
+C_MIE    = "#d62728"
+C_SC1    = "#1f77b4"
+C_SC3    = "#ff7f0e"
+C_VLINE  = "#9467bd"
+C_TOT    = "#2ca02c"
 
-TARGET_FREQ_THz = 193.41              # C-band 1550 nm
+TARGET_FREQ_THz = 193.41
 TARGET_LAM_um   = 3e2 / TARGET_FREQ_THz
 
 
@@ -80,7 +76,6 @@ def _style_ax(ax: plt.Axes) -> None:
 
 
 def _add_wavelength_axis(ax: plt.Axes) -> plt.Axes:
-    """Secondary top x-axis showing wavelength in µm."""
     ax2 = ax.twiny()
     ax2.set_xlim(150, 375)
     wl_ticks = [0.8, 1.0, 1.3, 1.55, 2.0]
@@ -95,35 +90,30 @@ def _add_wavelength_axis(ax: plt.Axes) -> plt.Axes:
 def plot_atmospheric_impairments(
     atm=_DEFAULT_ATM,
     n_freq: int = 600,
-    output_path: str | Path | None = None,
+    output_path=None,
     show: bool = False,
 ) -> Path:
     """
-    Three-panel atmospheric impairment figure (150–375 THz).
-
     Parameters
     ----------
-    atm         : AtmosphereConfig (uses hE_km, el_deg via config defaults).
-    n_freq      : Number of frequency points (default 600).
-    output_path : Where to save the PNG.  Defaults to plots/ next to this file.
-    show        : If True, call plt.show() after saving.
+    atm         : atmosphere config namespace (hE_km, h0_m, Z_m, vrms, C0).
+    n_freq      : number of frequency points.
+    output_path : output PNG path. Defaults to scripts/plots/atmospheric_impairments.png.
+    show        : if True, open an interactive window after saving.
 
     Returns
     -------
     Path of the saved figure.
     """
-    # ── Frequency / wavelength grid ───────────────────────────────────────────
     freq_THz = np.linspace(150, 375, n_freq)
-    lam_arr  = 3e2 / freq_THz          # µm
+    lam_arr  = 3e2 / freq_THz
 
-    # Elevation used for the sweep — take the midpoint default (40°)
     el_deg = 40.0
     hE_km  = atm.hE_km
 
-    # ── Compute ───────────────────────────────────────────────────────────────
-    mie_dB  = np.array([mie.attenuation_dB(l, hE_km, el_deg) for l in lam_arr])
-    scin_1s = np.array([scintillation.sigma_dB(l, el_deg, atm.h0_m, atm.Z_m, atm.vrms, atm.C0)
-                        for l in lam_arr])
+    mie_dB      = np.array([mie.attenuation_dB(l, hE_km, el_deg) for l in lam_arr])
+    scin_1s     = np.array([scintillation.sigma_dB(l, el_deg, atm.h0_m, atm.Z_m, atm.vrms, atm.C0)
+                            for l in lam_arr])
     scin_3s     = 3.0 * scin_1s
     total_at_dB = mie_dB + scin_1s
 
@@ -131,15 +121,12 @@ def plot_atmospheric_impairments(
     scin_target  = scintillation.sigma_dB(TARGET_LAM_um, el_deg, atm.h0_m, atm.Z_m, atm.vrms, atm.C0)
     total_target = mie_target + scin_target
 
-    # ── Layout ────────────────────────────────────────────────────────────────
     fig = plt.figure(figsize=(11, 12), facecolor="white")
-    gs  = gridspec.GridSpec(3, 1, hspace=0.50, top=0.88, bottom=0.10,
-                            left=0.10, right=0.95)
+    gs  = gridspec.GridSpec(3, 1, hspace=0.50, top=0.88, bottom=0.10, left=0.10, right=0.95)
 
-    # ── Panel 1: Mie ─────────────────────────────────────────────────────────
+    # Panel 1: Mie
     ax1 = fig.add_subplot(gs[0])
     _style_ax(ax1)
-
     ax1.plot(freq_THz, mie_dB, color=C_MIE, lw=2.0,
              label="Mie $A_S$ — P.1622-0 Annex 1, eq.(3)")
     ax1.axvline(TARGET_FREQ_THz, color=C_VLINE, lw=1.6, ls="--",
@@ -153,20 +140,17 @@ def plot_atmospheric_impairments(
                  arrowprops=dict(arrowstyle="->", color=C_VLINE, lw=1.1))
     ax1.set_xlabel("Frequency (THz)", fontsize=10)
     ax1.set_ylabel("Mie Attenuation  $A_S$ (dB)", fontsize=10)
-    ax1.set_title(
-        f"Mie Scattering — P.1622-0 Annex 1, §3.1\n"
-        f"$h_E$ = {hE_km} km,  $\\theta_E$ = {el_deg}°",
-        fontsize=10, pad=6,
-    )
+    ax1.set_title(f"Mie Scattering — P.1622-0 Annex 1, §3.1\n"
+                  f"$h_E$ = {hE_km} km,  $\\theta_E$ = {el_deg}°",
+                  fontsize=10, pad=6)
     ax1.set_xlim(150, 375)
     ax1.set_ylim(bottom=0)
     ax1.legend(fontsize=9, framealpha=0.9, loc="upper left")
     _add_wavelength_axis(ax1)
 
-    # ── Panel 2: Scintillation ────────────────────────────────────────────────
+    # Panel 2: Scintillation
     ax2 = fig.add_subplot(gs[1])
     _style_ax(ax2)
-
     ax2.plot(freq_THz, scin_1s, color=C_SC1, lw=2.0,
              label="$\\sigma_{dBN}$ (1$\\sigma$, 68.3% availability)")
     ax2.plot(freq_THz, scin_3s, color=C_SC3, lw=2.0, ls="--",
@@ -190,21 +174,18 @@ def plot_atmospheric_impairments(
                  arrowprops=dict(arrowstyle="->", color=C_SC3, lw=1.1))
     ax2.set_xlabel("Frequency (THz)", fontsize=10)
     ax2.set_ylabel("Scintillation Fade Depth (dB)", fontsize=10)
-    ax2.set_title(
-        f"Amplitude Scintillation — P.1622-0 Annex 1, eq.(4a)\n"
-        f"$\\theta_E$ = {el_deg}°,  $h_0$ = {atm.h0_m} m,  "
-        f"$v_{{rms}}$ = {atm.vrms} m/s,  $C_0$ = 1.7×10⁻¹⁴ m⁻²/³",
-        fontsize=10, pad=6,
-    )
+    ax2.set_title(f"Amplitude Scintillation — P.1622-0 Annex 1, eq.(4a)\n"
+                  f"$\\theta_E$ = {el_deg}°,  $h_0$ = {atm.h0_m} m,  "
+                  f"$v_{{rms}}$ = {atm.vrms} m/s,  $C_0$ = 1.7×10⁻¹⁴ m⁻²/³",
+                  fontsize=10, pad=6)
     ax2.set_xlim(150, 375)
     ax2.set_ylim(bottom=0)
     ax2.legend(fontsize=9, framealpha=0.9, loc="upper left")
     _add_wavelength_axis(ax2)
 
-    # ── Panel 3: Total ────────────────────────────────────────────────────────
+    # Panel 3: Total
     ax3 = fig.add_subplot(gs[2])
     _style_ax(ax3)
-
     ax3.plot(freq_THz, total_at_dB, color=C_TOT, lw=2.0,
              label="Total $A_{total}$ = $A_S$ + $\\sigma_{dBN}$ (1$\\sigma$)")
     ax3.axvline(TARGET_FREQ_THz, color=C_VLINE, lw=1.6, ls="--",
@@ -218,12 +199,10 @@ def plot_atmospheric_impairments(
                  arrowprops=dict(arrowstyle="->", color=C_TOT, lw=1.1))
     ax3.set_xlabel("Frequency (THz)", fontsize=10)
     ax3.set_ylabel("Total Attenuation  $A_{total}$ (dB)", fontsize=10)
-    ax3.set_title(
-        f"Total Atmospheric Attenuation — Mie + Scintillation (1σ)\n"
-        f"$h_E$ = {hE_km} km,  $\\theta_E$ = {el_deg}°,  $h_0$ = {atm.h0_m} m,  "
-        f"$v_{{rms}}$ = {atm.vrms} m/s,  $C_0$ = 1.7×10⁻¹⁴ m⁻²/³",
-        fontsize=10, pad=6,
-    )
+    ax3.set_title(f"Total Atmospheric Attenuation — Mie + Scintillation (1σ)\n"
+                  f"$h_E$ = {hE_km} km,  $\\theta_E$ = {el_deg}°,  $h_0$ = {atm.h0_m} m,  "
+                  f"$v_{{rms}}$ = {atm.vrms} m/s,  $C_0$ = 1.7×10⁻¹⁴ m⁻²/³",
+                  fontsize=10, pad=6)
     ax3.set_xlim(150, 375)
     ax3.set_ylim(bottom=0)
     ax3.legend(fontsize=9, framealpha=0.9, loc="upper left")
@@ -234,7 +213,6 @@ def plot_atmospheric_impairments(
         fontsize=13, color="#111111", fontweight="bold", y=0.97,
     )
 
-    # ── Save ─────────────────────────────────────────────────────────────────
     if output_path is None:
         out_dir = Path(__file__).parent / "plots"
         out_dir.mkdir(exist_ok=True)
@@ -259,4 +237,3 @@ if __name__ == "__main__":
     parser.add_argument("--out",  type=str, default=None, help="Output PNG path.")
     args = parser.parse_args()
     plot_atmospheric_impairments(output_path=args.out, show=args.show)
-
