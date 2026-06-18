@@ -114,8 +114,7 @@ dlb.precompute_lut(
 
 # ── Simulation du passage LEO ──────────────────────────────────────────────────
 
-azimuths_users = np.random.uniform(0, 360, sim.n_users)
-user_indices   = np.arange(sim.n_users)
+user_indices = np.arange(sim.n_users)
 
 all_slant      = []
 all_SNR_ideal  = []
@@ -131,8 +130,7 @@ for ts in range(sim.duration):
         for u in range(sim.n_users)
     ])
 
-    res = dlb.compute(ts, slant_m, azimuths_users, el_ts,
-                      user_indices=user_indices)
+    res = dlb.compute(ts, slant_m, el_ts, user_indices=user_indices)
 
     all_slant.append(res["slant_m"] / 1e3)
     all_SNR_ideal.append(res["SNR_dB"])

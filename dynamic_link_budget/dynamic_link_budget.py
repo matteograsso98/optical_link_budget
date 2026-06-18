@@ -51,7 +51,7 @@ class DynamicLinkBudget:
     1. Instancier avec les namespaces de configuration.
     2. Appeler ``precompute_lut(user_hE_km, ...)`` une fois avant la boucle
        de simulation pour construire la LUT atmosphérique (U × G).
-    3. Appeler ``compute(ts_index, slant_range_m, az_deg, el_deg)`` à chaque
+    3. Appeler ``compute(ts_index, slant_range_m, el_deg)`` à chaque
        pas de temps pour obtenir les SNR et débits Shannon.
     """
 
@@ -172,21 +172,16 @@ class DynamicLinkBudget:
         self,
         ts_index: int,
         slant_range_m,
-        az_deg,
         el_deg,
         user_indices=None,
     ) -> dict:
         """
         Compute FSO channel matrices, SNR, and Shannon capacity.
 
-        Mirrors channel.Channel.compute() for API consistency.
-
         Parameters
         ----------
         ts_index      : timestep index (forwarded to the output dict).
         slant_range_m : (U,) slant range from ground station to satellite [m].
-        az_deg        : (U,) azimuth angle [deg] — not used in FSO (no spatial
-                        multiplexing), kept for API symmetry with Channel.
         el_deg        : (U,) elevation angle [deg].
         user_indices  : (U,) int row indices into the LUT.
                         Defaults to 0, 1, …, U-1.
