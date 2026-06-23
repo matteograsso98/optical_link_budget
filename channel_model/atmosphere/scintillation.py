@@ -8,7 +8,35 @@ Reference: ITU-R P.1622-0 (scintillation), ITU-R P.1621-2 §5.1.1 (Cn²).
 
 import numpy as np
 
-from channel_model.atmosphere.turbulence import Cn2_profile
+# ---------------------------------------------------------------------------
+# Turbulence profile (imported here to avoid circular deps)
+# ---------------------------------------------------------------------------
+
+def Cn2_profile(
+    h_m: np.ndarray,
+    C0: float = 1.7e-14,
+    vg: float | None = None,
+    vrms: float | None = None,
+) -> np.ndarray:
+    """
+    Hufnagel-Valley Cn² profile.  ITU-R P.1621-2 eq. (6).
+
+    Parameters
+    ----------
+    h_m  : Height above ground in metres.
+    C0   : Ground-level Cn² in m^{-2/3}.
+    vg   : Ground wind speed in m/s.  Used to derive vrms via wind_rms().
+    vrms : RMS wind speed in m/s.  Takes precedence over vg when provided.
+           If neither is given, defaults to vg = 2.3 m/s.
+    """
+    if vrms is None:
+        vrms = wind_rms(2.3 if vg is None else vg)
+    h = np.asarray(h_m, dtype=float)
+    return (
+        8.148e-56 * vrms*2 * h*10 * np.exp(-h / 1000.0)
+        + 2.7e-16 * np.exp(-h / 1500.0)
+        + C0 * np.exp(-h / 100.0)
+    )
 
 
 def sigma_dB(
