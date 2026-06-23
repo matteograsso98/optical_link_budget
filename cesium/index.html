@@ -47,8 +47,10 @@
     <div id="cesiumContainer"></div>
 
     <div id="layer-controls">
-        <button id="btn-temp"  class="active" onclick="showLayer('temperature')">Temperature (°C)</button>
-        <button id="btn-wind"              onclick="showLayer('wind')">Wind (m/s)</button>
+        <button data-layer="temperature" class="active" onclick="showLayer('temperature')">Temperature (°C)</button>
+        <button data-layer="wind10"                     onclick="showLayer('wind10')">Wind 10m above ground (m/s)</button>
+        <button data-layer="wind50"                     onclick="showLayer('wind50')">Wind 50m above ground (m/s)</button>
+        <button data-layer="wind100"                    onclick="showLayer('wind100')">Wind 100m above ground (m/s)</button>
     </div>
 
     <script src="weather_overlay.js"></script>

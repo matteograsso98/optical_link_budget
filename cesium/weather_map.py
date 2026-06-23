@@ -6,6 +6,22 @@ print("Fetching NOAA GFS data...")
 # Initialize Herbie
 H = HerbieLatest(model='gfs', product='pgrb2.0p25', fxx=0)
 
+'''
+# Retrieve the complete inventory as a Pandas DataFrame
+df_inventory = H.inventory()
+
+# Extract and display only the single list of available variables
+# The 'search_this' or 'param' column contains the variable identifier
+variables = df_inventory["search_this"].unique()
+
+print(f"Total number of messages/variables : {len(df_inventory)}")
+print("\n--- Abbreviated list of available variables ---")
+for var in variables:  # Displays the first 20 for this example
+    print(var)
+
+exit()  # Stop the script after displaying the list of variables
+'''
+
 #—— TEMPERATURE DATA —————————————————————————————————————————————————————————————--
 try:
     ds = H.xarray("TMP:2 m above ground")
@@ -32,27 +48,50 @@ sort_idx = np.argsort(lon_shifted)
 temp_c = temp_c[:, sort_idx]
 
 
-#—— WIND SPEED DATA —————————————————————————————————————————————————————————————--
+#—— WIND SPEED DATA (10 m above ground) —————————————————————————————————————————————————————————————--
 try:
-    ds_u = H.xarray("UGRD:10 m above ground")
-    ds_v = H.xarray("VGRD:10 m above ground")
+    ds_u_10m = H.xarray("UGRD:10 m above ground")
+    ds_v_10m = H.xarray("VGRD:10 m above ground")
 except FileNotFoundError:
     print("Error: Could not find wind variables. Double-check the search string.")
     exit()
 
-lat = ds_u.latitude.values
-lon = ds_u.longitude.values
+lat = ds_u_10m.latitude.values
+lon = ds_u_10m.longitude.values
 
-u = ds_u[list(ds_u.data_vars)[0]].values
-v = ds_v[list(ds_v.data_vars)[0]].values
+u_10m = ds_u_10m[list(ds_u_10m.data_vars)[0]].values
+v_10m = ds_v_10m[list(ds_v_10m.data_vars)[0]].values
 
 # Wind speed magnitude [m/s]
-wind_speed = np.sqrt(u**2 + v**2)
+wind_speed_10m = np.sqrt(u_10m**2 + v_10m   **2)
 
 # GFS uses [0, 360] longitude — shift to [-180, 180]
 lon_shifted = np.where(lon > 180, lon - 360, lon)
 sort_idx = np.argsort(lon_shifted)
-wind_speed = wind_speed[:, sort_idx]
+wind_speed_10m = wind_speed_10m[:, sort_idx]
+
+
+#—— WIND SPEED DATA (50 m above ground) —————————————————————————————————————————————————————————————--
+try:
+    ds_u_50m = H.xarray("UGRD:50 m above ground")
+    ds_v_50m = H.xarray("VGRD:50 m above ground")
+except FileNotFoundError:
+    print("Error: Could not find wind variables. Double-check the search string.")
+    exit()
+
+lat = ds_u_50m.latitude.values
+lon = ds_u_50m.longitude.values
+
+u_50m = ds_u_50m[list(ds_u_50m.data_vars)[0]].values
+v_50m = ds_v_50m[list(ds_v_50m.data_vars)[0]].values
+
+# Wind speed magnitude [m/s]
+wind_speed_50m = np.sqrt(u_50m**2 + v_50m**2)
+
+# GFS uses [0, 360] longitude — shift to [-180, 180]
+lon_shifted = np.where(lon > 180, lon - 360, lon)
+sort_idx = np.argsort(lon_shifted)
+wind_speed_50m = wind_speed_50m[:, sort_idx]
 
 
 #—— TEMPERATURE MAP —————————————————————————————————————————————————————————————--
@@ -71,7 +110,7 @@ plt.savefig('temperature_map.png', transparent=True)
 print("✅ Saved temperature_map.png!")
 
 
-#—— WIND SPEED MAP —————————————————————————————————————————————————————————————--
+#—— WIND SPEED MAP (10 m above ground) ——————————————————————————————————————————————————————————————--
 print("Generating wind speed overlay...")
 fig = plt.figure(figsize=(12, 6), dpi=300)
 ax = plt.Axes(fig, [0., 0., 1., 1.])
@@ -79,8 +118,51 @@ ax.set_axis_off()
 fig.add_axes(ax)
 
 # bleu = calme, rouge = vent fort (vmax=30 m/s)
-ax.imshow(wind_speed, cmap='RdYlBu_r', extent=[-180, 180, -90, 90],
+ax.imshow(wind_speed_10m, cmap='RdYlBu_r', extent=[-180, 180, -90, 90],
           origin='upper', vmin=0, vmax=30)
 
-plt.savefig('wind_speed_map.png', transparent=True)
-print("✅ Saved wind_speed_map.png!")
+plt.savefig('wind_speed_10m_map.png', transparent=True)
+print("✅ Saved wind_speed_10m_map.png!")
+
+
+#—— WIND SPEED DATA (100 m above ground) —————————————————————————————————————————————————————————————--
+try:
+    ds_u_100m = H.xarray("UGRD:100 m above ground")
+    ds_v_100m = H.xarray("VGRD:100 m above ground")
+except FileNotFoundError:
+    print("Error: Could not find 100m wind variables. Double-check the search string.")
+    exit()
+
+u_100m = ds_u_100m[list(ds_u_100m.data_vars)[0]].values
+v_100m = ds_v_100m[list(ds_v_100m.data_vars)[0]].values
+
+wind_speed_100m = np.sqrt(u_100m**2 + v_100m**2)
+lon_shifted = np.where(ds_u_100m.longitude.values > 180, ds_u_100m.longitude.values - 360, ds_u_100m.longitude.values)
+wind_speed_100m = wind_speed_100m[:, np.argsort(lon_shifted)]
+
+
+#—— WIND SPEED MAP (50 m above ground) ——————————————————————————————————————————————————————————————--
+print("Generating wind speed overlay...")
+fig = plt.figure(figsize=(12, 6), dpi=300)
+ax = plt.Axes(fig, [0., 0., 1., 1.])
+ax.set_axis_off()
+fig.add_axes(ax)
+
+ax.imshow(wind_speed_50m, cmap='RdYlBu_r', extent=[-180, 180, -90, 90],
+          origin='upper', vmin=0, vmax=30)
+
+plt.savefig('wind_speed_50m_map.png', transparent=True)
+print("✅ Saved wind_speed_50m_map.png!")
+
+
+#—— WIND SPEED MAP (100 m above ground) ——————————————————————————————————————————————————————————————--
+fig = plt.figure(figsize=(12, 6), dpi=300)
+ax = plt.Axes(fig, [0., 0., 1., 1.])
+ax.set_axis_off()
+fig.add_axes(ax)
+
+ax.imshow(wind_speed_100m, cmap='RdYlBu_r', extent=[-180, 180, -90, 90],
+          origin='upper', vmin=0, vmax=30)
+
+plt.savefig('wind_speed_100m_map.png', transparent=True)
+print("✅ Saved wind_speed_100m_map.png!")
