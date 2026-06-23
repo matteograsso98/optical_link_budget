@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NOAA Weather 3D Globe</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        html, body, #cesiumContainer {
+            width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+        }
+
+        #layer-controls {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 999;
+            display: flex;
+            gap: 8px;
+        }
+
+        #layer-controls button {
+            padding: 8px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border: 2px solid #fff;
+            border-radius: 6px;
+            background: rgba(30, 30, 30, 0.75);
+            color: #fff;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #layer-controls button.active {
+            background: rgba(0, 120, 215, 0.85);
+            border-color: #60b0ff;
+        }
+
+        #layer-controls button:hover:not(.active) {
+            background: rgba(80, 80, 80, 0.85);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="cesiumContainer"></div>
+
+    <div id="layer-controls">
+        <button id="btn-temp"  class="active" onclick="showLayer('temperature')">Temperature (°C)</button>
+        <button id="btn-wind"              onclick="showLayer('wind')">Wind (m/s)</button>
+    </div>
+
+    <script src="weather_overlay.js"></script>
+
+</body>
+</html>
