@@ -36,6 +36,7 @@ import os
 import numpy as np
 
 from channel_model.atmosphere import mie, geometric, scintillation
+from channel_model.atmosphere.scintillation import _scin_integral, _sigma_from_integral
 from channel_model.link import budget
 from channel_model.base import BaseChannel
 from channel_model.snr import compute_snr_dB, compute_shannon_rate
@@ -152,6 +153,18 @@ class OpticalChannel(BaseChannel):
         # Build LUT
         losses = np.zeros((U, G), dtype=np.float64)
 
+        # Precompute the elevation-independent scintillation integral once per
+        # user. The integral ∫Cn²(h)·h^{5/6}dh does not depend on elevation,
+        # so computing it here (U times) instead of inside the loop (U×G times)
+        # gives a ~G-fold speedup (~161x for the default elevation grid).
+        if "scin" in atm_model:
+            lam_m_scin = lam_um * 1e-6
+            k_scin = 2.0 * np.pi / lam_m_scin
+            scin_integrals = np.array([
+                _scin_integral(user_h0_m[u], atm.Z_m, atm.vrms, atm.C0)
+                for u in range(U)
+            ])  # shape (U,)
+
         for i, el in enumerate(elevation_grid_deg):
             losses[:, i] = np.array(
                 [mie.attenuation_dB(lam_um, hE, el) for hE in user_hE_km]
@@ -166,10 +179,7 @@ class OpticalChannel(BaseChannel):
                 ])
 
             if "scin" in atm_model:
-                losses[:, i] += np.array([
-                    scintillation.sigma_dB(lam_um, el, user_h0_m[u], atm.Z_m, atm.vrms, atm.C0)
-                    for u in range(U)
-                ])
+                losses[:, i] += _sigma_from_integral(k_scin, el, scin_integrals)
 
         self._att_lut_dB       = losses
         self._att_lut_elev_deg = elevation_grid_deg

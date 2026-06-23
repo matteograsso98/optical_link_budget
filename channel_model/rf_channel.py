@@ -3,8 +3,8 @@ import sys
 
 try:
     import itur
-except ImportError:
-    print("Warning: 'itur' library not found. Please install it using 'pip install itur'.")
+except Exception:
+    print("Warning: 'itur' could not be imported (not installed or incompatible with current NumPy). RF channel atmospheric losses will be skipped.")
     itur = None
 
 try:

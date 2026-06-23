@@ -12,6 +12,23 @@ import numpy as np
 # Turbulence profile (imported here to avoid circular deps)
 # ---------------------------------------------------------------------------
 
+def wind_rms(vg: float = 2.3) -> float:
+    """
+    RMS wind speed along the vertical path (Bufton simplified model).
+
+    ITU-R P.1621-2 eq. (5):  v_rms = sqrt(v_g² + 30.69·v_g + 348.91)
+
+    Parameters
+    ----------
+    vg : Ground wind speed in m/s.  Unknown → use 2.3 m/s → v_rms ≈ 21 m/s.
+
+    Returns
+    -------
+    v_rms in m/s.
+    """
+    return float(np.sqrt(vg**2 + 30.69 * vg + 348.91))
+
+
 def Cn2_profile(
     h_m: np.ndarray,
     C0: float = 1.7e-14,
@@ -37,6 +54,49 @@ def Cn2_profile(
         + 2.7e-16 * np.exp(-h / 1500.0)
         + C0 * np.exp(-h / 100.0)
     )
+
+
+def _scin_integral(
+    h0_m: float,
+    Z_m: float = 20_000.0,
+    vrms: float = 21.0,
+    C0: float = 1.7e-14,
+    n_points: int = 80_000,
+) -> float:
+    """
+    Elevation-independent part: ∫_{h0_m}^{Z_m} Cn²(h) · h^{5/6} dh.
+
+    Separating this from the elevation factor allows the LUT builder to compute
+    it once per user instead of once per (user, elevation) pair — ~160x speedup.
+    """
+    h_arr = np.linspace(h0_m, Z_m, n_points)
+    integrand = Cn2_profile(h_arr, C0=C0, vrms=vrms) * h_arr ** (5.0 / 6.0)
+    return float(np.trapezoid(integrand, h_arr))
+
+
+def _sigma_from_integral(
+    k: float,
+    el_deg: float,
+    integral,           # scalar or (U,) ndarray
+):
+    """
+    Apply the elevation-dependent factor to a precomputed integral value.
+
+    Parameters
+    ----------
+    k        : Wave number 2π/λ [rad/m].
+    el_deg   : Elevation angle in degrees (scalar).
+    integral : Result of _scin_integral — scalar or (U,) array.
+
+    Returns
+    -------
+    sigma_dB values, same shape as integral.
+    """
+    sigma2_lnN = (2.253 * k ** (7.0 / 6.0)
+                  * (1.0 / np.sin(np.radians(el_deg))) ** (11.0 / 6.0)
+                  * integral)
+    sigma2_dBN = (10.0 / np.log(10.0)) ** 2 * sigma2_lnN
+    return np.sqrt(sigma2_dBN)
 
 
 def sigma_dB(
@@ -70,13 +130,5 @@ def sigma_dB(
     """
     lam_m = lam_um * 1e-6
     k = 2.0 * np.pi / lam_m
-
-    h_arr = np.linspace(h0_m, Z_m, n_points)
-    integrand = Cn2_profile(h_arr, C0=C0, vrms=vrms) * h_arr ** (5.0 / 6.0)
-    integral = np.trapezoid(integrand, h_arr)
-
-    sigma2_lnN = (2.253 * k ** (7.0 / 6.0)
-                  * (1.0 / np.sin(np.radians(el_deg))) ** (11.0 / 6.0)
-                  * integral)
-    sigma2_dBN = (10.0 / np.log(10.0)) ** 2 * sigma2_lnN
-    return float(np.sqrt(sigma2_dBN))
+    integral = _scin_integral(h0_m, Z_m, vrms, C0, n_points)
+    return float(_sigma_from_integral(k, el_deg, integral))
