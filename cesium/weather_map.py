@@ -6,7 +6,7 @@ print("Fetching NOAA GFS data...")
 # Initialize Herbie
 H = HerbieLatest(model='gfs', product='pgrb2.0p25', fxx=0)
 
-'''
+
 # Retrieve the complete inventory as a Pandas DataFrame
 df_inventory = H.inventory()
 
@@ -20,7 +20,7 @@ for var in variables:  # Displays the first 20 for this example
     print(var)
 
 exit()  # Stop the script after displaying the list of variables
-'''
+
 
 #—— TEMPERATURE DATA —————————————————————————————————————————————————————————————--
 try:
