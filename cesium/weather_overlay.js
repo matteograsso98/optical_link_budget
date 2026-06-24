@@ -22,10 +22,19 @@ const wind50Layer = viewer.imageryLayers.addImageryProvider(
 const wind100Layer = viewer.imageryLayers.addImageryProvider(
     new Cesium.SingleTileImageryProvider({ url: 'wind_speed_100m_map.png', rectangle: RECT })
 );
+const lwLayer = viewer.imageryLayers.addImageryProvider(
+    new Cesium.SingleTileImageryProvider({ url: 'lw_map.png', rectangle: RECT })
+);
+const cn2Layer = viewer.imageryLayers.addImageryProvider(
+    new Cesium.SingleTileImageryProvider({ url: 'cn2_map.png', rectangle: RECT })
+);
+const attenuationLayer = viewer.imageryLayers.addImageryProvider(
+    new Cesium.SingleTileImageryProvider({ url: 'attenuation_map.png', rectangle: RECT })
+);
 
-const allLayers = { temperature: tempLayer, wind10: wind10Layer, wind50: wind50Layer, wind100: wind100Layer };
+const allLayers = { temperature: tempLayer, wind10: wind10Layer, wind50: wind50Layer, wind100: wind100Layer, lw: lwLayer, cn2: cn2Layer, attenuation: attenuationLayer };
 
-// Température visible par défaut
+// Default Displayed Temperature
 Object.values(allLayers).forEach(l => l.show = false);
 tempLayer.show = true;
 
