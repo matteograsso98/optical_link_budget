@@ -73,9 +73,9 @@ def save_attenuation_plot(A_total, A_geom, A_scin, A_mie_scalar, lat, lon, filen
     """
     extent = [lon.min(), lon.max(), lat.min(), lat.max()]
     panels = [
-        (A_total, "Total attenuation (dB)",        "Reds",   0, None),
-        (A_geom,  "Geometric scattering (dB)",     "Blues",  0, None),
-        (A_scin,  "Scintillation σ (dB)",     "Greens", 0, None),
+        (A_total, "Total attenuation (dB)",    "Reds",   0, 15),
+        (A_geom,  "Geometric scattering (dB)", "Blues",  0, 10),
+        (A_scin,  "Scintillation σ (dB)",      "Greens", 0,  3),
     ]
     fig, axes = plt.subplots(1, 3, figsize=(20, 5), constrained_layout=True)
     for ax, (data, title, cmap, vmin, vmax) in zip(axes, panels):
@@ -105,27 +105,35 @@ def main():
     temp_c = gfs.field("TMP:2 m above ground") - 273.15
     save_map(temp_c, _map_path("temperature_map.png"), "turbo")
 
+    ws_maps = {}
     for level in ["10 m", "50 m", "100 m"]:
         ws = gfs.wind_speed(level)
+        ws_maps[level] = ws
         save_map(ws, _map_path(f"wind_speed_{level.replace(' ', '')}_map.png"),
                  "RdYlBu_r", vmin=0, vmax=30)
 
-    # —— Cn² at h = 7 000 m ───────────────────────────────────────────────────
-    ws_10m = gfs.wind_speed("10 m")
-    cn2 = scintillation.Cn2_profile(h_m=7_000.0, C0=C0, vg=ws_10m)
-    save_map(cn2, _map_path("cn2_map.png"), "plasma", vmin=0, vmax=1e-16)
+    ws_10m = ws_maps["10 m"]
 
     # —— Attenuation maps ─────────────────────────────────────────────────────
     print("Computing attenuation maps...")
 
     # GFS surface visibility [m] → km
-    V_km = gfs.field("VIS") / 1e3
+    V_km = gfs.field("VIS:surface") / 1e3
+    save_map(V_km, _map_path("visibility_map.png"), "YlGn", vmin=0, vmax=24)
+
+    # GFS cloud ceiling height [m AGL] → km
+    # Clear-sky pixels return 0 → fall back to full troposphere height
+    ceiling_m = gfs.field("HGT:cloud ceiling")
+    ceiling_km = ceiling_m / 1e3
+    hA_eff = np.where(ceiling_km > 0, ceiling_km, HA_KM)
+    hA_eff = np.clip(hA_eff, 0.1, HA_KM)
+    save_map(hA_eff, _map_path("ceiling_map.png"), "Blues_r", vmin=0, vmax=HA_KM)
 
     # Mie: scalar (fixed wavelength + sea-level station + elevation)
     A_mie = mie.attenuation_dB(LAM_UM, HE_KM, EL_DEG)
 
-    # Geometric: vectorised, driven by GFS visibility
-    A_geom = geometric.attenuation_dB(EL_DEG, LAM_UM, HA_KM, HE_KM, PHI, V_km=V_km)
+    # Geometric: vectorised, driven by GFS visibility and cloud ceiling height
+    A_geom = geometric.attenuation_dB(EL_DEG, LAM_UM, hA_eff, HE_KM, PHI, V_km=V_km)
 
     # Scintillation: array path triggered by keyword vg
     A_scin = scintillation.sigma_dB(LAM_UM, EL_DEG, H0_M, Z_M, C0=C0, vg=ws_10m)
@@ -133,7 +141,7 @@ def main():
     A_total = A_mie + A_geom + A_scin
 
     # Cesium overlay (borderless transparent PNG)
-    save_map(A_total, _map_path("attenuation_map.png"), "Reds", vmin=0, vmax=50)
+    save_map(A_total, _map_path("attenuation_map.png"), "Reds", vmin=0, vmax=15)
 
     # Diagnostic figure with axes and colourbars
     save_attenuation_plot(
