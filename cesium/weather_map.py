@@ -22,6 +22,14 @@ import matplotlib.pyplot as plt
 from load_gfs_data import GFSData
 from channel_model.atmosphere import mie, geometric, scintillation
 
+# ── Output directory for all map PNGs ────────────────────────────────────────
+MAPS_DIR = os.path.join(os.path.dirname(__file__), 'maps')
+os.makedirs(MAPS_DIR, exist_ok=True)
+
+def _map_path(filename):
+    """Return the full path for a map file inside maps/."""
+    return os.path.join(MAPS_DIR, filename)
+
 # ── Load configuration ────────────────────────────────────────────────────────
 _cfg_path = os.path.join(os.path.dirname(__file__), '..', 'config.yaml')
 with open(_cfg_path) as _f:
@@ -54,52 +62,6 @@ def save_map(data, filename, cmap, vmin=None, vmax=None, dpi=300):
     fig.savefig(filename, transparent=True)
     plt.close(fig)
     print(f"Saved {filename}")
-
-
-# ── Vectorised geometric attenuation (GFS visibility, no LW) ─────────────────
-
-def attenuation_geom_map(V_km):
-    """
-    Geometric scattering attenuation [dB] on a 2-D grid.
-
-    Uses GFS surface visibility V_km directly — visibility_km() is bypassed.
-    Pixels with V <= 0 (invalid / missing) are treated as clear sky (0 dB).
-
-    Implements Liang et al. eqs. (9)–(10):
-        θ_A = (3.91 / V) · (λ_nm / 550)^{−φ}
-        A_g = 4.3429 · θ_A · d_A
-    """
-    dA    = geometric.path_length_km(HA_KM, HE_KM, EL_DEG)   # scalar [km]
-    lam_nm = LAM_UM * 1e3
-    V_safe = np.where(V_km > 0, V_km, np.inf)                 # avoid ÷0
-    tA    = (3.91 / V_safe) * (lam_nm / 550.0) ** (-PHI)     # [km^{-1}]
-    Ig    = np.exp(-tA * dA)
-    return -10.0 * np.log10(np.maximum(Ig, 1e-30))            # positive [dB]
-
-
-# ── Vectorised scintillation via vrms LUT ─────────────────────────────────────
-
-def attenuation_scin_map(ws_2d, n_lut=500):
-    """
-    1-sigma scintillation depth [dB] on a 2-D grid.
-
-    Avoids the O(N_pts × N_cells) memory explosion by:
-      1. Computing _scin_integral for n_lut vrms values (scalar loop, fast).
-      2. Mapping every grid cell via np.interp (vectorised, no loop).
-
-    Scalability: 500 scalar integrals × 80 000 pts ≈ negligible; the final
-    np.interp over 1 M cells takes < 0.1 s.
-    """
-    vrms_2d      = scintillation.wind_rms(ws_2d)
-    v_min, v_max = float(vrms_2d.min()), float(vrms_2d.max())
-    vrms_lut     = np.linspace(v_min, v_max, n_lut)
-    integrals_lut = np.array([
-        scintillation._scin_integral(H0_M, Z_M, float(v), C0)
-        for v in vrms_lut
-    ])
-    integral_2d = np.interp(vrms_2d, vrms_lut, integrals_lut)
-    k = 2.0 * np.pi / (LAM_UM * 1e-6)
-    return scintillation._sigma_from_integral(k, EL_DEG, integral_2d)
 
 
 # ── Diagnostic matplotlib figure ─────────────────────────────────────────────
@@ -141,17 +103,17 @@ def main():
 
     # —— Existing overlay maps ────────────────────────────────────────────────
     temp_c = gfs.field("TMP:2 m above ground") - 273.15
-    save_map(temp_c, "temperature_map.png", "turbo")
+    save_map(temp_c, _map_path("temperature_map.png"), "turbo")
 
     for level in ["10 m", "50 m", "100 m"]:
         ws = gfs.wind_speed(level)
-        save_map(ws, f"wind_speed_{level.replace(' ', '')}_map.png",
+        save_map(ws, _map_path(f"wind_speed_{level.replace(' ', '')}_map.png"),
                  "RdYlBu_r", vmin=0, vmax=30)
 
     # —— Cn² at h = 7 000 m ───────────────────────────────────────────────────
     ws_10m = gfs.wind_speed("10 m")
     cn2 = scintillation.Cn2_profile(h_m=7_000.0, C0=C0, vg=ws_10m)
-    save_map(cn2, "cn2_map.png", "plasma", vmin=0, vmax=1e-16)
+    save_map(cn2, _map_path("cn2_map.png"), "plasma", vmin=0, vmax=1e-16)
 
     # —— Attenuation maps ─────────────────────────────────────────────────────
     print("Computing attenuation maps...")
@@ -163,20 +125,20 @@ def main():
     A_mie = mie.attenuation_dB(LAM_UM, HE_KM, EL_DEG)
 
     # Geometric: vectorised, driven by GFS visibility
-    A_geom = attenuation_geom_map(V_km)
+    A_geom = geometric.attenuation_dB(EL_DEG, LAM_UM, HA_KM, HE_KM, PHI, V_km=V_km)
 
-    # Scintillation: vectorised via vrms LUT
-    A_scin = attenuation_scin_map(ws_10m)
+    # Scintillation: array path triggered by keyword vg
+    A_scin = scintillation.sigma_dB(LAM_UM, EL_DEG, H0_M, Z_M, C0=C0, vg=ws_10m)
 
     A_total = A_mie + A_geom + A_scin
 
     # Cesium overlay (borderless transparent PNG)
-    save_map(A_total, "attenuation_map.png", "Reds", vmin=0, vmax=50)
+    save_map(A_total, _map_path("attenuation_map.png"), "Reds", vmin=0, vmax=50)
 
     # Diagnostic figure with axes and colourbars
     save_attenuation_plot(
         A_total, A_geom, A_scin, A_mie,
-        gfs.lat, gfs.lon, "attenuation_plot.png",
+        gfs.lat, gfs.lon, _map_path("attenuation_plot.png"),
     )
 
 

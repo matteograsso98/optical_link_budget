@@ -1,3 +1,7 @@
+cesium_map:
+  elevation_deg: 30.0              # satellite elevation angle used for the attenuation map
+  ground_station_altitude_km: 0.0  # ground station altitude assumed for the global map
+
 general:
   simulation_name: fso_leo_dynamic_link_budget
   simulation_duration: 100    # number of timesteps

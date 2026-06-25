@@ -12,7 +12,7 @@ import numpy as np
 # Turbulence profile (imported here to avoid circular deps)
 # ---------------------------------------------------------------------------
 
-def wind_rms(vg: float = 2.3) -> float:
+def wind_rms(vg=2.3):
     """
     RMS wind speed along the vertical path (Bufton simplified model).
 
@@ -20,13 +20,15 @@ def wind_rms(vg: float = 2.3) -> float:
 
     Parameters
     ----------
-    vg : Ground wind speed in m/s.  Unknown → use 2.3 m/s → v_rms ≈ 21 m/s.
+    vg : Ground wind speed in m/s — scalar or numpy array.
+         Unknown → use 2.3 m/s → v_rms ≈ 21 m/s.
 
     Returns
     -------
-    v_rms in m/s.
+    v_rms in m/s, same shape as vg.
     """
-    return float(np.sqrt(vg**2 + 30.69 * vg + 348.91))
+    vg = np.asarray(vg, dtype=float)
+    return np.sqrt(vg**2 + 30.69 * vg + 348.91)
 
 
 def Cn2_profile(
@@ -50,7 +52,7 @@ def Cn2_profile(
         vrms = wind_rms(2.3 if vg is None else vg)
     h = np.asarray(h_m, dtype=float)
     return (
-        8.148e-56 * vrms*2 * h*10 * np.exp(-h / 1000.0)
+        8.148e-56 * (vrms**2) * (h**10) * np.exp(-h / 1000.0)
         + 2.7e-16 * np.exp(-h / 1500.0)
         + C0 * np.exp(-h / 100.0)
     )
@@ -107,12 +109,20 @@ def sigma_dB(
     vrms: float = 21.0,
     C0: float = 1.7e-14,
     n_points: int = 80_000,
-) -> float:
+    *,
+    vg=None,
+    n_lut: int = 500,
+):
     """
     1-sigma log-irradiance scintillation depth in dB (Earth-to-space).
 
     ITU-R P.1622-0 eq. (4a): σ²_lnN = 2.253 · k^{7/6} · (1/sinθ)^{11/6} · ∫Cn²(h)·h^{5/6}dh
     ITU-R P.1622-0 eq. (4c): σ²_dBN = (10/ln10)² · σ²_lnN
+
+    Wind speed source — provide one of:
+      vrms : RMS wind speed in m/s (positional, default 21.0) — scalar only.
+      vg   : Surface wind speed in m/s (keyword-only) — scalar or numpy array.
+             Takes precedence over vrms; vrms is derived internally via wind_rms().
 
     Parameters
     ----------
@@ -120,15 +130,33 @@ def sigma_dB(
     el_deg   : Elevation angle in degrees.
     h0_m     : Earth station height above ground in metres (default 5.5 m).
     Z_m      : Effective turbulence ceiling height in metres (default 20 000 m).
-    vrms     : RMS wind speed in m/s (default 21.0).
+    vrms     : RMS wind speed in m/s (default 21.0) — ignored when vg is given.
     C0       : Ground-level Cn² in m^{-2/3} (default 1.7e-14).
     n_points : Number of integration points (default 80 000).
+    vg       : Surface wind speed in m/s — keyword-only, scalar or array.
+    n_lut    : LUT resolution for the array path (default 500).
 
     Returns
     -------
-    sigma_dB : 1-sigma scintillation fade depth in dB.
+    Scalar float when all inputs are scalar; numpy array when vg is an array.
     """
-    lam_m = lam_um * 1e-6
-    k = 2.0 * np.pi / lam_m
-    integral = _scin_integral(h0_m, Z_m, vrms, C0, n_points)
-    return float(_sigma_from_integral(k, el_deg, integral))
+    k = 2.0 * np.pi / (lam_um * 1e-6)
+
+    vrms_in = wind_rms(vg) if vg is not None else np.asarray(vrms, dtype=float)
+
+    # ── Scalar path (original behaviour) ─────────────────────────────────────
+    if np.ndim(vrms_in) == 0:
+        integral = _scin_integral(h0_m, Z_m, float(vrms_in), C0, n_points)
+        return float(_sigma_from_integral(k, el_deg, integral))
+
+    # ── Array path: LUT over vrms + interpolation ─────────────────────────────
+    # Avoids the O(n_points × n_cells) memory explosion by computing the
+    # elevation-independent integral for n_lut representative vrms values,
+    # then mapping every grid cell via np.interp.
+    vrms_arr = np.asarray(vrms_in)
+    vrms_lut = np.linspace(float(vrms_arr.min()), float(vrms_arr.max()), n_lut)
+    integrals_lut = np.array([
+        _scin_integral(h0_m, Z_m, float(v), C0, n_points) for v in vrms_lut
+    ])
+    integral_arr = np.interp(vrms_arr, vrms_lut, integrals_lut)
+    return _sigma_from_integral(k, el_deg, integral_arr)

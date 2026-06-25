@@ -173,7 +173,7 @@ class OpticalChannel(BaseChannel):
             if "geom" in atm_model:
                 losses[:, i] += np.array([
                     geometric.attenuation_dB(
-                        el, atm.LW, atm.N, lam_um, atm.hA_km, hE, atm.phi
+                        el, lam_um, atm.hA_km, hE, atm.phi, LW=atm.LW, N=atm.N
                     )
                     for hE in user_hE_km
                 ])

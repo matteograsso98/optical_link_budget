@@ -142,7 +142,7 @@ def required_tx_power_dBm(
     A_mie = mie.attenuation_dB(lam_um, hE_km, el_deg)
 
     if atm_model == "mie_geom":
-        A_atm = A_mie + geometric.attenuation_dB(el_deg, LW, N, lam_um, hA_km, hE_km, phi)
+        A_atm = A_mie + geometric.attenuation_dB(el_deg, lam_um, hA_km, hE_km, phi, LW=LW, N=N)
     elif atm_model == "mie_scin":
         A_atm = A_mie + scintillation.sigma_dB(lam_um, el_deg, h0_m, Z_m, vrms)
     else:

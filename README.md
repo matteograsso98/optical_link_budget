@@ -62,7 +62,7 @@ d_GS  = geometry.slant_distance_km(40.0, hE_km=1.0, hS_km=550.0)
 | h_S | 550.0 km | LEO satellite altitude |
 | h_A | 20.0 km | Troposphere top (geometric scattering) |
 | v_rms | 21.0 m/s | RMS wind speed (scintillation) |
-| C0 | 1.7 × 10⁻¹⁴ m⁻²/³ | Ground-level Cn² |
+| C0 | 1.7 × 10⁻¹⁴ m⁻²/³ | Ground-level Cn² — see note below † |
 | LW | 3.128 × 10⁻⁴ g m⁻³ | Liquid water content |
 | N | 0.5 cm⁻³ | Cloud droplet concentration |
 | D_R | 80 mm | Receiver telescope diameter |
@@ -71,8 +71,20 @@ d_GS  = geometry.slant_distance_km(40.0, hE_km=1.0, hS_km=550.0)
 | θ_T, θ_R | 1 µrad | Pointing errors |
 | P_r | −32.5 dBm | Target received power |
 
+> **† C0 — fixed value rationale.**
+> The ground-level refractive-index structure parameter C0 is currently fixed at
+> **1.7 × 10⁻¹⁴ m⁻²/³** for all Cn² and scintillation attenuation computations
+> (Hufnagel-Valley profile, `scintillation.py`).
+> This is the default value specified in **ITU-R P.1621-2** and is used here
+> because NOAA GFS does not export Cn² or the surface turbulence quantities
+> (e.g. sensible heat flux, temperature structure parameter Ct²) needed to derive
+> a spatially varying C0 from NWP data.
+> Spatialising C0 from GFS surface fields remains future work — see the section
+> below.
+
 ## What is NOT yet implemented
 
+- **Spatially varying C0** — ground-level Cn² currently fixed at the ITU-R P.1621-2 default (1.7 × 10⁻¹⁴ m⁻²/³); derivation from GFS surface fields (temperature, pressure, wind, sensible heat flux) via Monin-Obukhov similarity theory is not yet implemented
 - **Dynamic link budget** (time-varying elevation, orbital propagation)
 - **Rayleigh scattering** (ITU-R P.1621-2 §3.1 — no analytical formula in the standard; see note in `P1621.py`)
 - **Space-to-space link** (no atmosphere — straightforward to add using only `link/`)
