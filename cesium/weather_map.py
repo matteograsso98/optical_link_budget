@@ -15,6 +15,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))               # cesium/ → load_gfs_data
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))  # project root → channel_model
 
+import warnings
 import yaml
 import numpy as np
 import matplotlib.pyplot as plt
@@ -45,7 +46,6 @@ HE_KM   = _map_cfg['ground_station_altitude_km']  # ground station altitude [km]
 HA_KM   = _atm['troposphere_top_km']          # troposphere top [km]
 Z_M     = float(_atm['turbulence_ceiling_m']) # scintillation ceiling [m]
 C0      = _atm['ground_cn2_m_neg23']          # ground-level Cn² [m^{-2/3}]
-PHI     = _atm['cloud']['kim_phi_coefficient']# Kim model particle-size coeff
 H0_M    = _deploy['station_height_m']         # station height above ground [m]
 
 
@@ -119,21 +119,28 @@ def main():
 
     # GFS surface visibility [m] → km
     V_km = gfs.field("VIS:surface") / 1e3
+    n_unreliable = int(np.sum(V_km > 24))
+    if n_unreliable > 0:
+        warnings.warn(
+            f"{n_unreliable} pixels have V > 24 km: geometric attenuation values "
+            "are unreliable above the GFS visibility cap (Kim & Kruse, 2001).",
+            UserWarning, stacklevel=2,
+        )
     save_map(V_km, _map_path("visibility_map.png"), "YlGn", vmin=0, vmax=24)
 
-    # GFS cloud ceiling height [m AGL] → km
+    # GFS planetary boundary layer height [m AGL] → km
     # Clear-sky pixels return 0 → fall back to full troposphere height
-    ceiling_m = gfs.field("HGT:cloud ceiling")
-    ceiling_km = ceiling_m / 1e3
-    hA_eff = np.where(ceiling_km > 0, ceiling_km, HA_KM)
+    hpbl_m = gfs.field("HPBL:surface")
+    hpbl_km = hpbl_m / 1e3
+    hA_eff = np.where(hpbl_km > 0, hpbl_km, HA_KM)
     hA_eff = np.clip(hA_eff, 0.1, HA_KM)
-    save_map(hA_eff, _map_path("ceiling_map.png"), "Blues_r", vmin=0, vmax=HA_KM)
+    save_map(hA_eff, _map_path("hpbl_map.png"), "Blues_r", vmin=0, vmax=HA_KM)
 
     # Mie: scalar (fixed wavelength + sea-level station + elevation)
     A_mie = mie.attenuation_dB(LAM_UM, HE_KM, EL_DEG)
 
-    # Geometric: vectorised, driven by GFS visibility and cloud ceiling height
-    A_geom = geometric.attenuation_dB(EL_DEG, LAM_UM, hA_eff, HE_KM, PHI, V_km=V_km)
+    # Geometric: vectorised, φ derived per-pixel from V via Kim model (Kim & Kruse, 2001)
+    A_geom = geometric.attenuation_dB(EL_DEG, LAM_UM, hA_eff, HE_KM, V_km=V_km)
 
     # Scintillation: array path triggered by keyword vg
     A_scin = scintillation.sigma_dB(LAM_UM, EL_DEG, H0_M, Z_M, C0=C0, vg=ws_10m)

@@ -10,30 +10,32 @@ const viewer = new Cesium.Viewer('cesiumContainer', {
 
 const RECT = Cesium.Rectangle.fromDegrees(-180.0, -90.0, 180.0, 90.0);
 
-const tempLayer   = viewer.imageryLayers.addImageryProvider(
-    new Cesium.SingleTileImageryProvider({ url: 'maps/temperature_map.png',    rectangle: RECT })
+const tempLayer    = viewer.imageryLayers.addImageryProvider(
+    new Cesium.SingleTileImageryProvider({ url: 'maps/temperature_map.png',     rectangle: RECT })
 );
-const wind10Layer = viewer.imageryLayers.addImageryProvider(
-    new Cesium.SingleTileImageryProvider({ url: 'maps/wind_speed_10m_map.png', rectangle: RECT })
+const wind10Layer  = viewer.imageryLayers.addImageryProvider(
+    new Cesium.SingleTileImageryProvider({ url: 'maps/wind_speed_10m_map.png',  rectangle: RECT })
 );
-const wind50Layer = viewer.imageryLayers.addImageryProvider(
-    new Cesium.SingleTileImageryProvider({ url: 'maps/wind_speed_50m_map.png', rectangle: RECT })
+const wind50Layer  = viewer.imageryLayers.addImageryProvider(
+    new Cesium.SingleTileImageryProvider({ url: 'maps/wind_speed_50m_map.png',  rectangle: RECT })
 );
 const wind100Layer = viewer.imageryLayers.addImageryProvider(
     new Cesium.SingleTileImageryProvider({ url: 'maps/wind_speed_100m_map.png', rectangle: RECT })
 );
-const visibilityLayer = viewer.imageryLayers.addImageryProvider(
-    new Cesium.SingleTileImageryProvider({ url: 'maps/visibility_map.png', rectangle: RECT })
-);
 const attenuationLayer = viewer.imageryLayers.addImageryProvider(
-    new Cesium.SingleTileImageryProvider({ url: 'maps/attenuation_map.png', rectangle: RECT })
+    new Cesium.SingleTileImageryProvider({ url: 'maps/attenuation_map.png',     rectangle: RECT })
 );
 
-const allLayers = { temperature: tempLayer, wind10: wind10Layer, wind50: wind50Layer, wind100: wind100Layer, visibility: visibilityLayer, attenuation: attenuationLayer };
+const allLayers = {
+    temperature: tempLayer,
+    wind10:      wind10Layer,
+    wind50:      wind50Layer,
+    wind100:     wind100Layer,
+    attenuation: attenuationLayer,
+};
 
-// Default Displayed Temperature
+// Start with bare Earth globe — no overlay active
 Object.values(allLayers).forEach(l => l.show = false);
-tempLayer.show = true;
 
 window.showLayer = function(name) {
     Object.entries(allLayers).forEach(([key, layer]) => layer.show = (key === name));
