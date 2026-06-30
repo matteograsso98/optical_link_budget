@@ -1,45 +1,51 @@
+// ── Satellite base layer — Esri World Imagery (no file, no token) ─────────────
+const _baseLayer = Cesium.ImageryLayer.fromProviderAsync(
+    Cesium.ArcGisMapServerImageryProvider.fromUrl(
+        'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'
+    )
+);
+
 const viewer = new Cesium.Viewer('cesiumContainer', {
     baseLayerPicker: false,
-    imageryProvider: new Cesium.UrlTemplateImageryProvider({
-        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        subdomains: ['a', 'b', 'c']
-    }),
-    animation: false,
-    timeline: false
+    animation:       false,
+    timeline:        false,
+    baseLayer:       _baseLayer,
 });
 
+// ── GFS overlay layers ────────────────────────────────────────────────────────
 const RECT = Cesium.Rectangle.fromDegrees(-180.0, -90.0, 180.0, 90.0);
 
-const tempLayer    = viewer.imageryLayers.addImageryProvider(
-    new Cesium.SingleTileImageryProvider({ url: 'maps/temperature_map.png',     rectangle: RECT })
-);
-const wind10Layer  = viewer.imageryLayers.addImageryProvider(
-    new Cesium.SingleTileImageryProvider({ url: 'maps/wind_speed_10m_map.png',  rectangle: RECT })
-);
-const wind50Layer  = viewer.imageryLayers.addImageryProvider(
-    new Cesium.SingleTileImageryProvider({ url: 'maps/wind_speed_50m_map.png',  rectangle: RECT })
-);
-const wind100Layer = viewer.imageryLayers.addImageryProvider(
-    new Cesium.SingleTileImageryProvider({ url: 'maps/wind_speed_100m_map.png', rectangle: RECT })
-);
-const attenuationLayer = viewer.imageryLayers.addImageryProvider(
-    new Cesium.SingleTileImageryProvider({ url: 'maps/attenuation_map.png',     rectangle: RECT })
-);
-
 const allLayers = {
-    temperature: tempLayer,
-    wind10:      wind10Layer,
-    wind50:      wind50Layer,
-    wind100:     wind100Layer,
-    attenuation: attenuationLayer,
+    temperature: viewer.imageryLayers.addImageryProvider(
+        new Cesium.SingleTileImageryProvider({ url: 'maps/temperature_map.png',     rectangle: RECT })
+    ),
+    wind10:      viewer.imageryLayers.addImageryProvider(
+        new Cesium.SingleTileImageryProvider({ url: 'maps/wind_speed_10m_map.png',  rectangle: RECT })
+    ),
+    wind50:      viewer.imageryLayers.addImageryProvider(
+        new Cesium.SingleTileImageryProvider({ url: 'maps/wind_speed_50m_map.png',  rectangle: RECT })
+    ),
+    wind100:     viewer.imageryLayers.addImageryProvider(
+        new Cesium.SingleTileImageryProvider({ url: 'maps/wind_speed_100m_map.png', rectangle: RECT })
+    ),
+    attenuation: viewer.imageryLayers.addImageryProvider(
+        new Cesium.SingleTileImageryProvider({ url: 'maps/attenuation_map.png',     rectangle: RECT })
+    ),
 };
 
-// Start with bare Earth globe — no overlay active
+// Start with bare Earth — no overlay active
 Object.values(allLayers).forEach(l => l.show = false);
 
+// ── Toggle: click active button → hide; click inactive → show ─────────────────
 window.showLayer = function(name) {
-    Object.entries(allLayers).forEach(([key, layer]) => layer.show = (key === name));
-    document.querySelectorAll('#layer-controls button').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.layer === name);
-    });
+    const layer    = allLayers[name];
+    const wasActive = layer.show;
+
+    Object.values(allLayers).forEach(l => l.show = false);
+    document.querySelectorAll('#layer-controls button').forEach(b => b.classList.remove('active'));
+
+    if (!wasActive) {
+        layer.show = true;
+        document.querySelector('[data-layer="' + name + '"]').classList.add('active');
+    }
 };
