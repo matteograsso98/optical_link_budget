@@ -9,6 +9,27 @@ Reference: Liang et al., arXiv:2204.13177v1, Section III-B-2, eqs. (8)–(10).
 import numpy as np
 
 
+def kim_phi(V_km):
+    """
+    Kim model particle-size coefficient φ as a function of visibility.
+
+    Kim & Kruse (2001): φ transitions from wavelength-dependent scattering
+    (clear air, φ = 1.6) to wavelength-independent scattering (dense fog, φ = 0).
+
+    V > 50 km  : φ = 1.6   (Rayleigh / very clear air)
+    6–50 km    : φ = 1.3   (clear to hazy)
+    1–6 km     : φ = 0.16·V + 0.34
+    0.5–1 km   : φ = V − 0.5
+    < 0.5 km   : φ = 0.0   (dense fog, wavelength-independent scattering)
+    """
+    V = np.asarray(V_km, dtype=float)
+    return np.select(
+        [V > 50,  V > 6,  V > 1,            V > 0.5],
+        [1.6,     1.3,    0.16 * V + 0.34,  V - 0.5],
+        default=0.0,
+    )
+
+
 def visibility_km(LW: float, N: float) -> float:
     """
     Meteorological visibility V in km from cloud/fog microphysics.
@@ -29,7 +50,7 @@ def visibility_km(LW: float, N: float) -> float:
     return 1.002 / (LW * N) ** 0.6473
 
 
-def extinction_coefficient_km(lam_um: float, V_km: float, phi: float) -> float:
+def extinction_coefficient_km(lam_um: float, V_km, phi=None):
     """
     Geometric scattering extinction coefficient θ_A in km^{-1} (Kim model).
 
@@ -39,43 +60,49 @@ def extinction_coefficient_km(lam_um: float, V_km: float, phi: float) -> float:
     ----------
     lam_um : Wavelength in micrometres.
     V_km   : Visibility in km — scalar or numpy array.
-    phi    : Particle-size coefficient (Kim model).
+    phi    : Particle-size coefficient. If None, derived from V via kim_phi()
+             (Kim & Kruse, 2001) — recommended when V_km is available.
 
     Returns
     -------
     theta_A : Extinction coefficient in km^{-1}.
     """
     lam_nm = lam_um * 1e3
+    if phi is None:
+        phi = kim_phi(V_km)
     return (3.91 / V_km) * (lam_nm / 550.0) ** (-phi)
 
 
-def path_length_km(hA_km: float, hE_km: float, el_deg: float) -> float:
+def path_length_km(hA_km, hE_km: float, el_deg: float):
     """
-    Slant path length through the troposphere in km.
+    Slant path length through the scattering layer in km.
 
     Liang et al. §III-B-2:  d_A = (h_A − h_E) / sin(θ_E)
 
     Parameters
     ----------
-    hA_km  : Troposphere top height in km (typically 20 km).
+    hA_km  : Scattering layer top in km — scalar or numpy array.
+             Use cloud ceiling height for realistic fog/cloud scenarios,
+             or troposphere top (typically 20 km) for aerosol/haze columns.
     hE_km  : Ground station altitude in km.
     el_deg : Elevation angle in degrees.
 
     Returns
     -------
-    d_A : Path length in km.
+    d_A : Path length in km, same shape as hA_km.
     """
-    if hA_km <= hE_km:
-        raise ValueError("hA_km must be greater than hE_km.")
-    return (hA_km - hE_km) / np.sin(np.radians(el_deg))
+    hA = np.asarray(hA_km, dtype=float)
+    if np.any(hA <= hE_km):
+        raise ValueError("hA_km must be greater than hE_km for all pixels.")
+    return (hA - hE_km) / np.sin(np.radians(el_deg))
 
 
 def attenuation_dB(
     el_deg: float,
     lam_um: float,
-    hA_km: float,
+    hA_km,
     hE_km: float,
-    phi: float,
+    phi=None,
     *,
     LW: float | None = None,
     N: float | None = None,
